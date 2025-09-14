@@ -1,0 +1,7 @@
+numpy
+pandas
+scikit-learn
+xgboost
+faiss-cpu
+groq
+openpyxl
