@@ -32,3 +32,10 @@ Follow the steps below to set up the project locally.
 ```bash
 git clone https://github.com/Subicharan1018/ctai.git
 cd ctai
+```
+
+### 2.Install required files
+```bash
+cd xgboost
+pip install requirements.txt
+```
