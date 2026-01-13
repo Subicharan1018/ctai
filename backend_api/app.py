@@ -1,134 +1,90 @@
-
 import json
 import os
 import re
 from typing import List, Dict, Any
+from datetime import datetime, timedelta
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 import requests
-from datetime import datetime
-import joblib
-import warnings
-import traceback
-from scipy import sparse
-from dotenv import load_dotenv
-import time
-import matplotlib.pyplot as plt
-from dateutil.relativedelta import relativedelta
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from dotenv import load_dotenv
+import time
 
-
-warnings.filterwarnings('ignore')
-
-# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
-# Allow specific origin with all methods and headers
-CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:3000"]}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:3000"]}})
 
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        response = app.make_default_options_response()
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS")
-        return response
-
-class IndiaMART_RAG:
-    def __init__(self, json_dir: str = "json", embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"):
+class ConstructionProcurementSystem:
+    def __init__(self, json_dir: str = "json"):
         self.json_dir = json_dir
-        self.embedding_model_name = embedding_model
-        # Lazy load model to avoid heavy startup if possible, or keep it if speed is needed
-        self.embedding_model = SentenceTransformer(embedding_model)
+        self.embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
         self.index = None
         self.documents = []
         self.metadata = []
         self.groq_api_key = os.getenv("GROQ_API_KEY")
-        if not self.groq_api_key:
-            print("Groq API key missing. Set GROQ_API_KEY in .env file.")
+        
+        # Material estimation factors (per sqft for typical construction) - FALLBACK
+        self.material_factors = {
+            "cement": {"unit": "Bags (50kg)", "per_sqft": 0.4, "unit_cost": 400},
+            "steel": {"unit": "Kg", "per_sqft": 4.0, "unit_cost": 65},
+            "sand": {"unit": "Cubic Feet", "per_sqft": 1.2, "unit_cost": 50},
+            "aggregate": {"unit": "Cubic Feet", "per_sqft": 2.0, "unit_cost": 45},
+            "bricks": {"unit": "Pieces", "per_sqft": 8, "unit_cost": 10},
+            "tiles": {"unit": "Sqft", "per_sqft": 1.1, "unit_cost": 80},
+            "paint": {"unit": "Liters", "per_sqft": 0.15, "unit_cost": 350},
+            "electrical_wire": {"unit": "Meters", "per_sqft": 3.0, "unit_cost": 25},
+            "plumbing_pipe": {"unit": "Meters", "per_sqft": 1.5, "unit_cost": 120},
+            "doors": {"unit": "Units", "per_sqft": 0.01, "unit_cost": 8000},
+            "windows": {"unit": "Units", "per_sqft": 0.015, "unit_cost": 5000},
+        }
+        
+        # Map JSON files to material categories for RAG
+        self.material_categories = {
+            "cement": ["cement.json", "cement_links.json"],
+            "concrete": ["concrete_links.json"],
+            "aggregate": ["aggregate_links.json"],
+            "sand": ["sand_links.json"],
+            "tiles": ["tiles_links.json"],
+            "aac_blocks": ["aac_blocks_links.json"],
+            "windows": ["windows_links.json"],
+            "doors": ["fire_rated_doors_links.json"],
+            "false_ceiling": ["false_ceiling_links.json"],
+            "raised_flooring": ["raised_flooring_links.json"],
+            "insulation": ["insulation_links.json"],
+            "ducting": ["ducting_links.json"],
+            "chillers": ["chillers_links.json"],
+            "cooling_tower": ["cooling_tower_links.json"],
+            "pumps": ["pumps_links.json", "waterpump_links.json", "chilled_waterpump_links.json", "fire_pump_links.json"],
+            "cables": ["cable_links.json"],
+            "lv_panel": ["LV_panel_links.json"],
+            "ht_switchgear": ["ht_switch_gear_links.json"],
+            "transformer": ["power_transformer_links.json"],
+            "diesel_generator": ["diesel_generator_links.json"],
+            "ups_battery": ["ups_batter_links.json"],
+            "earthing": ["earthing_links.json"],
+            "busduct": ["busduct_cabletrays_links.json"],
+            "structured_cabling": ["Structured_Cabling_links.json"],
+            "server_racks": ["server_racks_links.json"],
+            "cctv": ["cctv_links.json"],
+            "fire_detection": ["fire_detection_links.json"],
+            "sprinkler": ["sprinkler_links.json"],
+            "hydrant": ["hydrant_links.json"],
+            "clean_agent": ["clean_agent_links.json"],
+            "water_storage": ["water_storage_links.json"],
+            "water_supply_piping": ["water_supply_piping_links.json"],
+            "drainage_piping": ["drainage_piping_links.json"],
+            "sanitary_fixtures": ["sanitary_fixtures_links.json"],
+            "valves_fittings": ["valves_fittings_links.json"],
+            "grout": ["grout_links.json"],
+            "acoustic_partition": ["acoustic_partition_links.json"]
+        }
 
-    def _call_groq_api(self, prompt: str, max_tokens: int = 1024) -> str:
-        """Helper to call Groq API with optimized token handling and rate limit delay"""
-        time.sleep(2)
-        if len(prompt) > 3000:
-            prompt = prompt[:3000] + "\n... (truncated to fit token limit)"
-            print(f"Prompt truncated to ~750 tokens to avoid context length issues.")
-
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.groq_api_key}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": "llama-3.1-8b-instant",
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-                "temperature": 0.7
-            }
-            response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            if 'choices' in data and len(data['choices']) > 0:
-                return data['choices'][0]['message']['content']
-            else:
-                print("Invalid API response format.")
-                return "Error: Invalid API response."
-        except requests.exceptions.HTTPError as e:
-            error_msg = f"API HTTP Error: {str(e)} - {e.response.text}"
-            if e.response.status_code == 400:
-                error_msg += f" - Possible context length issue. Prompt length: {len(prompt)} chars."
-            elif e.response.status_code == 401:
-                error_msg += " - Invalid API key."
-            elif e.response.status_code == 429:
-                error_msg += " - Rate limit exceeded. Retrying after delay..."
-                time.sleep(10)
-                return self._call_groq_api(prompt, max_tokens)
-            print(error_msg)
-            return f"Error: {error_msg}"
-        except Exception as e:
-            print(f"General Error: {str(e)}")
-            return f"Error: {str(e)}"
-
-    def generate_response(self, query: str, context: List[Dict[str, Any]], requirements: Dict[str, Any] = None, material_estimates: List[Dict[str, Any]] = None) -> str:
-        context_text = ""
-        for i, result in enumerate(context[:1]):
-            doc_str = f"Title: {result['metadata']['title']}\nURL: {result['metadata']['url']}\nDetails: {json.dumps(result['metadata']['details'], separators=(',', ':'))[:200]}"
-            context_text += f"Document {i+1}:\n{doc_str[:300]}\n\n"
-
-        if material_estimates:
-            context_text += "Materials Needed:\n" + "\n".join([f"- {m['Material/Equipment']}: {m['Quantity']}" for m in material_estimates])
-
-        prompt = f"""
-Assistant for construction procurement. Use context from IndiaMART database.
-Context:
-{context_text}
-Query: {query}
-Instructions:
-- Use only context info.
-- Output in structured format:
-Products:
-1. Name: [name]
-   Brand: [brand]
-   Availability: [availability]
-   Location: [location]
-   Vendor: [vendor]
-   URL: [url]
-
-Vendors:
-1. Company Name: [company]
-   Address: [address]
-   GST Status: [gst]
-   Rating: [rating]
-- Be concise and factual.
-Answer:
-"""
-        return self._call_groq_api(prompt, max_tokens=512)
-
-    def load_and_process_json_files(self):
+    def load_json_files(self):
+        """Load all JSON files from directory"""
         print("Loading JSON files...")
         json_files = [f for f in os.listdir(self.json_dir) if f.endswith('.json')]
         
@@ -140,21 +96,22 @@ Answer:
                     
                     if isinstance(data, list):
                         for item in data:
-                            self._process_item(item)
+                            self._process_item(item, json_file)
                     else:
-                        self._process_item(data)
+                        self._process_item(data, json_file)
                         
             except Exception as e:
                 print(f"Error loading {json_file}: {str(e)}")
                 
-        print(f"Loaded {len(self.documents)} documents")
+        print(f"Loaded {len(self.documents)} products from vendors")
     
-    def _process_item(self, item: Dict[str, Any]):
+    def _process_item(self, item: Dict[str, Any], source_file: str):
+        """Process each product item for searchability"""
         text_parts = []
         
         title = item.get('title', '')
         if title:
-            text_parts.append(f"Title: {title}")
+            text_parts.append(f"Product: {title}")
         
         details = item.get('details', {})
         if details and isinstance(details, dict):
@@ -164,19 +121,15 @@ Answer:
         
         description = item.get('description', '')
         if description:
-            text_parts.append(f"Description: {description}")
+            text_parts.append(f"Description: {description[:200]}")
         
         seller_info = item.get('seller_info', {})
-        if seller_info and isinstance(seller_info, dict):
-            for key, value in seller_info.items():
-                if key != 'error' and value != 'Seller information not available' and value:
-                    text_parts.append(f"Seller {key}: {value}")
-        
         company_info = item.get('company_info', {})
-        if company_info and isinstance(company_info, dict):
-            for key, value in company_info.items():
-                if value:
-                    text_parts.append(f"Company {key}: {value}")
+        
+        # Extract location
+        address = seller_info.get('full_address', '')
+        if address:
+            text_parts.append(f"Location: {address}")
         
         text = " ".join(text_parts)
         
@@ -184,608 +137,520 @@ Answer:
             self.documents.append(text)
             self.metadata.append({
                 'url': item.get('url', ''),
-                'title': item.get('title', ''),
-                'description': item.get('description', ''),
-                'details': item.get('details', {}),
-                'seller_info': item.get('seller_info', {}),
-                'company_info': item.get('company_info', {}),
-                'reviews': item.get('reviews', [])
+                'title': title,
+                'details': details,
+                'seller_info': seller_info,
+                'company_info': company_info,
+                'reviews': item.get('reviews', []),
+                'source_file': source_file,
+                'location': address
             })
     
-    def build_faiss_index(self):
+    def build_index(self):
+        """Build FAISS index for semantic search"""
         if not self.documents:
             print("No documents to index!")
             return
             
-        print("Building FAISS index...")
+        print("Building search index...")
         embeddings = self.embedding_model.encode(self.documents, show_progress_bar=True)
         dimension = embeddings.shape[1]
         self.index = faiss.IndexFlatL2(dimension)
         self.index.add(np.array(embeddings).astype('float32'))
-        print("FAISS index built successfully")
+        print("Index built successfully")
     
-    def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        if self.index is None or len(self.documents) == 0:
-            raise ValueError("Index not built or no documents loaded")
+    def call_groq_api(self, prompt: str, system_prompt: str = "") -> str:
+        """Call Groq API for AI analysis"""
+        if not self.groq_api_key:
+            return None
+            
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.groq_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            
+            data = {
+                "model": "llama-3.1-8b-instant",
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": 2000
+            }
+            
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                return response.json()["choices"][0]["message"]["content"]
+            else:
+                print(f"Groq API error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            print(f"Groq API call failed: {e}")
+            return None
+    
+    def analyze_project_with_ai(self, query: str, project_details: Dict) -> Dict:
+        """Use AI to analyze project and determine required materials"""
+        
+        # Get all available material categories
+        available_categories = list(self.material_categories.keys())
+        
+        system_prompt = """You are an expert construction procurement analyst. 
+Analyze the project requirements and return a JSON response with required materials.
+Only use materials from the available categories provided.
+Be practical and specific based on project type (data center, commercial, industrial, residential)."""
+
+        prompt = f"""Project Query: {query}
+
+Project Details:
+- Built Area: {project_details.get('built_area_sqft', 0):,} sqft
+- Project Type: {project_details.get('project_type', 'commercial')}
+- Power Capacity: {project_details.get('power_capacity_mw', 'N/A')} MW
+- Budget: {project_details.get('project_volume_cr', 'N/A')} Crores
+
+Available Material Categories:
+{json.dumps(available_categories, indent=2)}
+
+Based on this project (appears to be a data center/power project given the MW specification), 
+return a JSON object with the following structure:
+{{
+    "project_analysis": "Brief analysis of what this project needs",
+    "recommended_materials": [
+        {{
+            "category": "category_name from available list",
+            "search_query": "specific search term for finding products",
+            "priority": "high/medium/low",
+            "reason": "why this material is needed"
+        }}
+    ]
+}}
+
+For a 25MW data center project, focus on:
+- Electrical systems (transformers, HT switchgear, cables, UPS, generators)
+- Cooling systems (chillers, cooling towers, pumps, ducting)
+- Building materials (concrete, raised flooring, false ceiling)
+- Fire safety (fire detection, sprinkler, clean agent)
+- IT infrastructure (structured cabling, server racks)
+
+Return ONLY the JSON object, no other text."""
+
+        ai_response = self.call_groq_api(prompt, system_prompt)
+        
+        if ai_response:
+            try:
+                # Extract JSON from response
+                json_match = re.search(r'\{[\s\S]*\}', ai_response)
+                if json_match:
+                    return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                print("Failed to parse AI response as JSON")
+        
+        # Fallback: Return default materials based on project type
+        return self._get_fallback_materials(project_details)
+    
+    def _get_fallback_materials(self, project_details: Dict) -> Dict:
+        """Fallback material recommendations when AI is unavailable"""
+        power_mw = project_details.get('power_capacity_mw')
+        
+        # If it's a power/data center project
+        if power_mw and power_mw > 0:
+            return {
+                "project_analysis": "Data center/power infrastructure project requiring electrical and cooling systems",
+                "recommended_materials": [
+                    {"category": "transformer", "search_query": "power transformer", "priority": "high", "reason": "Power distribution"},
+                    {"category": "ht_switchgear", "search_query": "HT switchgear panel", "priority": "high", "reason": "High voltage switching"},
+                    {"category": "lv_panel", "search_query": "LV panel board", "priority": "high", "reason": "Low voltage distribution"},
+                    {"category": "diesel_generator", "search_query": "diesel generator DG set", "priority": "high", "reason": "Backup power"},
+                    {"category": "ups_battery", "search_query": "UPS battery system", "priority": "high", "reason": "Uninterrupted power"},
+                    {"category": "cables", "search_query": "power cable armoured", "priority": "high", "reason": "Electrical wiring"},
+                    {"category": "chillers", "search_query": "water cooled chiller", "priority": "high", "reason": "Cooling system"},
+                    {"category": "cooling_tower", "search_query": "cooling tower FRP", "priority": "high", "reason": "Heat rejection"},
+                    {"category": "pumps", "search_query": "chilled water pump", "priority": "medium", "reason": "Water circulation"},
+                    {"category": "ducting", "search_query": "HVAC ducting", "priority": "medium", "reason": "Air distribution"},
+                    {"category": "raised_flooring", "search_query": "raised access floor", "priority": "medium", "reason": "Cable management"},
+                    {"category": "fire_detection", "search_query": "fire alarm system", "priority": "high", "reason": "Fire safety"},
+                    {"category": "clean_agent", "search_query": "clean agent fire suppression", "priority": "high", "reason": "Server room protection"},
+                    {"category": "structured_cabling", "search_query": "structured cabling cat6", "priority": "medium", "reason": "Network infrastructure"},
+                    {"category": "server_racks", "search_query": "server rack cabinet", "priority": "medium", "reason": "Equipment housing"},
+                ]
+            }
+        else:
+            # Standard construction project
+            return {
+                "project_analysis": "Commercial/residential construction project",
+                "recommended_materials": [
+                    {"category": "cement", "search_query": "OPC cement 53 grade", "priority": "high", "reason": "Structural work"},
+                    {"category": "concrete", "search_query": "ready mix concrete", "priority": "high", "reason": "Foundation and structure"},
+                    {"category": "aggregate", "search_query": "construction aggregate", "priority": "high", "reason": "Concrete mix"},
+                    {"category": "tiles", "search_query": "vitrified floor tiles", "priority": "medium", "reason": "Flooring"},
+                    {"category": "windows", "search_query": "aluminium windows", "priority": "medium", "reason": "Facade"},
+                    {"category": "false_ceiling", "search_query": "gypsum false ceiling", "priority": "medium", "reason": "Interior finish"},
+                    {"category": "cables", "search_query": "electrical wire cable", "priority": "high", "reason": "Electrical wiring"},
+                    {"category": "sanitary_fixtures", "search_query": "sanitary fittings", "priority": "medium", "reason": "Plumbing"},
+                ]
+            }
+    
+    def search_vendors(self, material_query: str, location: str = "", k: int = 5) -> List[Dict]:
+        """Search for vendors based on material and location"""
+        if self.index is None:
+            return []
+        
+        # Construct search query - always search all data (Navi Mumbai focus)
+        search_query = material_query
         
         k = min(k, len(self.documents))
-        query_embedding = self.embedding_model.encode([query])
-        distances, indices = self.index.search(np.array(query_embedding).astype('float32'), k)
+        query_embedding = self.embedding_model.encode([search_query])
+        distances, indices = self.index.search(np.array(query_embedding).astype('float32'), k * 3)
         
         results = []
+        seen_companies = set()
+        
         for i, idx in enumerate(indices[0]):
-            if idx < len(self.metadata):
-                results.append({
-                    'document': self.documents[idx],
-                    'metadata': self.metadata[idx],
-                    'distance': float(distances[0][i])
-                })
-        return results
-    
-    def filter_by_criteria(self, results: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
-        filtered_results = []
-        for result in results:
-            metadata = result['metadata']
-            company_info = metadata.get('company_info', {})
-            details = metadata.get('details', {})
-            
-            if "in " in query.lower() or "navi mumbai" in query.lower():
-                location_match = re.search(r'in\s+([\w\s]+)$', query.lower())
-                location = "navi mumbai" if "navi mumbai" in query.lower() else None
-                if location_match and not location:
-                    location = location_match.group(1).strip()
+            if len(results) >= k:
+                break
                 
-                if location:
-                    address = str(company_info.get('full_address', '')).lower() + " " + str(metadata.get('seller_info', {}).get('full_address', '')).lower()
-                    if location not in address:
-                        continue
-            
-            if "gst after 2017" in query.lower():
-                gst_date = company_info.get('gst_registration_date', '')
-                if gst_date:
-                    try:
-                        date_obj = datetime.strptime(gst_date, '%d-%m-%Y')
-                        if date_obj.year <= 2017:
-                            continue
-                    except ValueError:
-                        continue
-                else:
+            if idx < len(self.metadata):
+                meta = self.metadata[idx]
+                
+                # Get company name to avoid duplicates
+                company = meta.get('seller_info', {}).get('contact_person', '') or meta.get('seller_info', {}).get('seller_name', '')
+                if company in seen_companies:
                     continue
-            
-            if "high rating" in query.lower() or "rating" in query.lower():
-                reviews = metadata.get('reviews', [])
-                overall_rating = None
+                seen_companies.add(company)
+                
+                # Extract rating
+                rating = "N/A"
+                reviews = meta.get('reviews', [])
                 for review in reviews:
                     if review.get('type') == 'overall_rating':
-                        try:
-                            overall_rating = float(review.get('value', 0))
-                            break
-                        except (ValueError, TypeError):
-                            pass
+                        rating = review.get('value', 'N/A')
+                        break
                 
-                if overall_rating is None or overall_rating < 4.0:
-                    continue
-            
-            if "available in stock" in query.lower() or "in stock" in query.lower():
-                availability = str(details.get('availability', '')).lower()
-                if 'in stock' not in availability:
-                    continue
-            
-            if "fire retardant" in query.lower() or "fireproof" in query.lower():
-                details_text = str(details).lower() + " " + str(metadata.get('description', '')).lower()
-                if 'fire retardant' not in details_text and 'fireproof' not in details_text:
-                    continue
-            
-            filtered_results.append(result)
-        return filtered_results
-    
-    def extract_project_requirements(self, query: str) -> Dict[str, Any]:
-        requirements = {
-            "power_capacity": None,
-            "built_up_area": None,
-            "project_volume": None,
-            "location": None,
-            "materials": {}
-        }
-        
-        power_match = re.search(r'(\d+)\s*Mega?Watt', query, re.IGNORECASE)
-        if power_match:
-            requirements["power_capacity"] = float(power_match.group(1))
-        
-        area_match = re.search(r'(\d+)\s*Lacs?\s*SquareFoot', query, re.IGNORECASE)
-        if area_match:
-            requirements["built_up_area"] = float(area_match.group(1)) * 100000
-        
-        volume_match = re.search(r'(\d+)\s*Cr\s*(in\s*Rupees)?', query, re.IGNORECASE)
-        if volume_match:
-            requirements["project_volume"] = float(volume_match.group(1)) * 10000000
-        
-        location_match = re.search(r'in\s+([\w\s]+)$', query, re.IGNORECASE)
-        if location_match:
-            requirements["location"] = location_match.group(1).strip()
-        
-        if "navi mumbai" in query.lower():
-            requirements["location"] = "Navi Mumbai"
-        
-        return requirements
-    
-    def estimate_material_requirements(self, requirements: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Estimate material requirements using LLM based on project specs"""
-        prompt = f"""
-        Project Requirements:
-        {json.dumps(requirements, indent=2)}
-        
-        Based on Indian Construction Standards, estimate the key materials required for this project.
-        Include major categories like Cement, Steel, Sand, Bricks, Electrical (Transformers, Cables), Plumbing, etc.
-        
-        Output valid JSON list of objects with these keys:
-        - "Material/Equipment": Name of material
-        - "Quantity": Estimated quantity with unit (e.g., "5000 Bags", "100 Tons")
-        - "Unit Cost (Rupees)": Estimated cost in Crores or Lakhs (e.g. "0.5 Crores")
-        - "Notes": Basis of estimation
-        
-        Provide at least 5-7 distinct material categories relevant to the project size.
-        Example:
-        [
-            {{"Material/Equipment": "Cement", "Quantity": "50000 Bags", "Unit Cost (Rupees)": "1.5 Crores", "Notes": "Based on 0.4 bags/sqft"}},
-            {{"Material/Equipment": "TMT Steel Bars", "Quantity": "500 Tons", "Unit Cost (Rupees)": "2.5 Crores", "Notes": "Standard reinforcement ratio"}}
-        ]
-        """
-        try:
-            response_json = self._call_groq_api(prompt, max_tokens=1024)
-            # Clean up response to ensure JSON
-            if "```json" in response_json:
-                response_json = response_json.split("```json")[1].split("```")[0]
-            elif "```" in response_json:
-                response_json = response_json.split("```")[1].split("```")[0]
-                
-            estimates = json.loads(response_json.strip())
-            return estimates if isinstance(estimates, list) else []
-        except Exception as e:
-            print(f"Error estimating materials: {e}")
-            # Fallback to simple logic if LLM fails
-            materials = []
-            if requirements.get("built_up_area"):
-                area = requirements["built_up_area"]
-                materials.append({
-                    "Material/Equipment": "Cement (Fallback)",
-                    "Quantity": f"{area * 0.4:.0f} Bags",
-                    "Unit Cost (Rupees)": "Unknown",
-                    "Notes": "Fallback Estimate"
+                results.append({
+                    'product': meta.get('title', 'N/A'),
+                    'vendor': company or meta.get('seller_info', {}).get('seller_name', 'N/A'),
+                    'location': meta.get('location', 'N/A') or meta.get('seller_info', {}).get('location', 'N/A'),
+                    'gst': meta.get('company_info', {}).get('gst', 'N/A'),
+                    'rating': rating,
+                    'url': meta.get('url', ''),
+                    'availability': meta.get('details', {}).get('availability', 'N/A'),
+                    'relevance_score': round(float(distances[0][i]), 2)
                 })
-            return materials
+        
+        return results
     
-    def format_material_table(self, materials: List[Dict[str, Any]]) -> str:
-        if not materials:
-            return ""
-        table = "| Material/Equipment | Quantity | Unit Cost (Rupees) |\n"
-        table += "|-------------------|----------|-------------------|\n"
-        for material in materials:
-            table += f"| {material['Material/Equipment']} | {material['Quantity']} | {material['Unit Cost (Rupees)']} |\n"
-        return table
+    def estimate_materials_fallback(self, built_area_sqft: float, project_type: str = "residential") -> List[Dict]:
+        """Fallback: Estimate material requirements based on built area using hardcoded formulas"""
+        materials = []
+        
+        # Adjust factors based on project type
+        type_multiplier = {
+            "residential": 1.0,
+            "commercial": 1.3,
+            "industrial": 1.5,
+            "data_center": 1.8
+        }.get(project_type.lower(), 1.0)
+        
+        for material, factors in self.material_factors.items():
+            quantity = built_area_sqft * factors["per_sqft"] * type_multiplier
+            total_cost = quantity * factors["unit_cost"]
+            
+            materials.append({
+                "material": material.title(),
+                "quantity": round(quantity, 2),
+                "unit": factors["unit"],
+                "unit_cost": factors["unit_cost"],
+                "total_cost": round(total_cost, 2),
+                "cost_in_lakhs": round(total_cost / 100000, 2)
+            })
+        
+        return materials
     
-    def query(self, query: str, k: int = 10, apply_filters: bool = True) -> Dict[str, Any]:
-        requirements = self.extract_project_requirements(query)
-        material_estimates = []
+    def calculate_budget_breakdown(self, materials: List[Dict], built_area_sqft: float, project_volume_cr: float = None) -> Dict:
+        """Calculate detailed budget breakdown"""
+        material_cost = sum(m['total_cost'] for m in materials)
         
-        if any([requirements["power_capacity"], requirements["built_up_area"], requirements["project_volume"]]):
-            material_estimates = self.estimate_material_requirements(requirements)
+        # Standard construction cost components (as % of material cost)
+        labor_cost = material_cost * 0.45  # 45% of material cost
+        equipment_cost = material_cost * 0.15  # 15% of material cost
+        overhead = material_cost * 0.10  # 10% overhead
+        contractor_profit = material_cost * 0.08  # 8% profit
         
-        search_results = self.search(query, k=k)
+        total_cost = material_cost + labor_cost + equipment_cost + overhead + contractor_profit
         
-        if apply_filters:
-            filtered_results = self.filter_by_criteria(search_results, query)
-        else:
-            filtered_results = search_results
-        
-        response = self.generate_response(query, filtered_results, requirements, material_estimates)
-        sources = [result['metadata']['url'] for result in filtered_results if result['metadata']['url']]
+        # If project volume is specified, scale the budget to match
+        if project_volume_cr:
+            target_total = project_volume_cr * 10000000  # Convert Cr to Rupees
+            if total_cost > 0:
+                scale_factor = target_total / total_cost
+                material_cost *= scale_factor
+                labor_cost *= scale_factor
+                equipment_cost *= scale_factor
+                overhead *= scale_factor
+                contractor_profit *= scale_factor
+                total_cost = target_total
         
         return {
-            'answer': response,
-            'sources': sources,
-            'num_results': len(filtered_results),
-            'material_estimates': material_estimates
+            "material_cost": round(material_cost, 2),
+            "labor_cost": round(labor_cost, 2),
+            "equipment_cost": round(equipment_cost, 2),
+            "overhead": round(overhead, 2),
+            "contractor_profit": round(contractor_profit, 2),
+            "total_cost": round(total_cost, 2),
+            "cost_per_sqft": round(total_cost / built_area_sqft, 2) if built_area_sqft > 0 else 0,
+            "total_cost_in_crores": round(total_cost / 10000000, 2),
+            "breakdown_percentage": {
+                "materials": round((material_cost / total_cost) * 100, 1) if total_cost > 0 else 0,
+                "labor": round((labor_cost / total_cost) * 100, 1) if total_cost > 0 else 0,
+                "equipment": round((equipment_cost / total_cost) * 100, 1) if total_cost > 0 else 0,
+                "overhead": round((overhead / total_cost) * 100, 1) if total_cost > 0 else 0,
+                "profit": round((contractor_profit / total_cost) * 100, 1) if total_cost > 0 else 0
+            }
+        }
+    
+    def generate_schedule(self, built_area_sqft: float, project_type: str = "commercial", power_mw: float = None) -> Dict:
+        """Generate project schedule for Gantt chart"""
+        
+        # Base duration in months based on project size
+        if built_area_sqft <= 50000:
+            base_months = 12
+        elif built_area_sqft <= 200000:
+            base_months = 18
+        else:
+            base_months = 24
+        
+        # Adjust for data center/power projects
+        if power_mw and power_mw > 10:
+            base_months = int(base_months * 1.3)
+        
+        start_date = datetime.now()
+        
+        # Define phases based on project type
+        if power_mw and power_mw > 0:
+            # Data center / Power project phases
+            phases_config = [
+                {"name": "Site Preparation & Foundation", "percent": 0.10, "color": "#3B82F6"},
+                {"name": "Civil Structure", "percent": 0.15, "color": "#6366F1"},
+                {"name": "Building Envelope", "percent": 0.10, "color": "#8B5CF6"},
+                {"name": "Electrical Infrastructure", "percent": 0.20, "color": "#EC4899"},
+                {"name": "HVAC & Cooling Systems", "percent": 0.15, "color": "#F59E0B"},
+                {"name": "Fire Safety Systems", "percent": 0.08, "color": "#EF4444"},
+                {"name": "IT Infrastructure", "percent": 0.10, "color": "#10B981"},
+                {"name": "Testing & Commissioning", "percent": 0.12, "color": "#06B6D4"},
+            ]
+        else:
+            # Standard construction phases
+            phases_config = [
+                {"name": "Site Preparation", "percent": 0.08, "color": "#3B82F6"},
+                {"name": "Foundation Work", "percent": 0.12, "color": "#6366F1"},
+                {"name": "Structural Work", "percent": 0.20, "color": "#8B5CF6"},
+                {"name": "MEP Rough-in", "percent": 0.15, "color": "#EC4899"},
+                {"name": "Building Envelope", "percent": 0.12, "color": "#F59E0B"},
+                {"name": "Interior Finishing", "percent": 0.18, "color": "#10B981"},
+                {"name": "Final MEP & Systems", "percent": 0.10, "color": "#06B6D4"},
+                {"name": "Handover & Defects", "percent": 0.05, "color": "#EF4444"},
+            ]
+        
+        total_days = base_months * 30
+        phases = []
+        current_date = start_date
+        
+        for i, config in enumerate(phases_config):
+            duration = int(total_days * config["percent"])
+            end_date = current_date + timedelta(days=duration)
+            
+            phases.append({
+                "id": f"phase_{i+1}",
+                "name": config["name"],
+                "startDate": current_date.strftime("%Y-%m-%d"),
+                "endDate": end_date.strftime("%Y-%m-%d"),
+                "duration": duration,
+                "progress": 0,  # Fresh project
+                "color": config["color"],
+                "dependencies": [f"phase_{i}"] if i > 0 else []
+            })
+            
+            current_date = end_date
+        
+        return {
+            "phases": phases,
+            "total_duration": total_days,
+            "total_months": base_months,
+            "start_date": start_date.strftime("%Y-%m-%d"),
+            "end_date": current_date.strftime("%Y-%m-%d")
+        }
+    
+    def generate_procurement_report(self, query: str) -> Dict:
+        """Generate comprehensive procurement report using AI + RAG"""
+        
+        # Extract project details from query using regex
+        area_match = re.search(
+            r'(\d+(?:\.\d+)?)\s*(lacs?|lakhs?|lac)?\s*(sqft|squarefoot|square\s*foot|square\s*feet|sq\.?\s*ft)',
+            query, re.IGNORECASE
+        )
+        
+        volume_match = re.search(
+            r'(?:project\s*volume\s*(?:of\s*)?)?(\d+(?:\.\d+)?)\s*(cr|crore|crores?)(?:\s*(?:in\s*)?rupees?)?',
+            query, re.IGNORECASE
+        )
+        
+        location_match = re.search(
+            r'(?:build\s*)?in\s+([a-zA-Z][a-zA-Z\s]+?)(?:\s+area|\s*$|,)',
+            query, re.IGNORECASE
+        )
+        
+        type_match = re.search(r'(residential|commercial|industrial|data\s*center)', query, re.IGNORECASE)
+        power_match = re.search(r'(\d+(?:\.\d+)?)\s*(megawatt|mw|mega\s*watt)', query, re.IGNORECASE)
+        
+        # Parse built area
+        built_area = 50000  # Default
+        if area_match:
+            built_area = float(area_match.group(1))
+            if area_match.group(2) and any(x in area_match.group(2).lower() for x in ['lac', 'lakh']):
+                built_area *= 100000
+        
+        # Parse project volume (in Crores)
+        project_volume_cr = None
+        if volume_match:
+            project_volume_cr = float(volume_match.group(1))
+        
+        # Parse power capacity
+        power_mw = None
+        if power_match:
+            power_mw = float(power_match.group(1))
+        
+        location = location_match.group(1).strip() if location_match else "Navi Mumbai"
+        project_type = type_match.group(1) if type_match else ("data_center" if power_mw else "commercial")
+        
+        project_details = {
+            "built_area_sqft": built_area,
+            "location": location,
+            "project_type": project_type,
+            "power_capacity_mw": power_mw,
+            "project_volume_cr": project_volume_cr
+        }
+        
+        # Use AI to analyze and determine required materials
+        ai_analysis = self.analyze_project_with_ai(query, project_details)
+        
+        # Fetch materials using RAG based on AI recommendations
+        materials = []
+        vendor_mapping = {}
+        
+        recommended_materials = ai_analysis.get("recommended_materials", [])
+        
+        for material_info in recommended_materials:
+            category = material_info.get("category", "")
+            search_query = material_info.get("search_query", category)
+            priority = material_info.get("priority", "medium")
+            
+            # Search for vendors using RAG
+            vendors = self.search_vendors(search_query, location, k=3)
+            
+            if vendors:
+                vendor_mapping[category.replace("_", " ").title()] = vendors
+                
+                # Create material entry
+                materials.append({
+                    "material": category.replace("_", " ").title(),
+                    "quantity": "As per specification",
+                    "unit": "Units",
+                    "unit_cost": "Market Rate",
+                    "total_cost": 0,
+                    "cost_in_lakhs": 0,
+                    "priority": priority,
+                    "reason": material_info.get("reason", ""),
+                    "vendor_count": len(vendors)
+                })
+        
+        # If no AI recommendations or vendors found, use fallback
+        if not materials:
+            materials = self.estimate_materials_fallback(built_area, project_type)
+            for material in materials[:5]:
+                vendors = self.search_vendors(material['material'], location, k=3)
+                vendor_mapping[material['material']] = vendors
+        
+        # Calculate budget using fallback formulas (scaled to project volume if specified)
+        fallback_materials = self.estimate_materials_fallback(built_area, project_type)
+        budget = self.calculate_budget_breakdown(fallback_materials, built_area, project_volume_cr)
+        
+        # Generate project schedule
+        schedule = self.generate_schedule(built_area, project_type, power_mw)
+        
+        return {
+            "project_details": project_details,
+            "ai_analysis": ai_analysis.get("project_analysis", ""),
+            "material_requirements": materials,
+            "budget_breakdown": budget,
+            "vendor_recommendations": vendor_mapping,
+            "schedule": schedule
         }
 
 # Global instance
-rag = None
+system = None
 
-def init_rag():
-    global rag
-    if rag is None:
+def init_system():
+    global system
+    if system is None:
         try:
-            rag = IndiaMART_RAG(json_dir="json")  # Ensure this matches directory structure
-            rag.load_and_process_json_files()
-            rag.build_faiss_index()
-            print("RAG System Initialized")
+            system = ConstructionProcurementSystem(json_dir="json")
+            system.load_json_files()
+            system.build_index()
+            print("Procurement System Initialized")
         except Exception as e:
-            print(f"RAG init error: {e}")
+            print(f"System init error: {e}")
 
-# ML Helpers
-def check_files():
-    files = [
-        'deterministic_mapping_full.pkl', 'xgb_regressor_full.pkl',
-        'xgb_classifier_full.pkl', 'label_encoder_full.pkl', 'class_mapping_full.pkl',
-        'tfidf_vectorizer.pkl', 'numeric_imputer.pkl', 'date_imputer.pkl',
-        'categorical_mapping.pkl', 'date_feature_names.pkl', 'numeric_feature_names.pkl'
-    ]
-    available = []
-    missing = []
-    for file in files:
-        if os.path.exists(file):
-            available.append(file)
-        else:
-            missing.append(file)
-    return available, missing
-
-def clean_numeric_value(value, clip_negative=True, replace_zero_epsilon=False):
-    if isinstance(value, str):
-        value = (value.replace(',', '').replace('$','').replace(' ','').replace(' ', ''))
-        try:
-            value = float(value)
-        except:
-            value = np.nan
-    if clip_negative and value is not None and value < 0:
-        value = 0
-    if replace_zero_epsilon and value is not None and value <= 0:
-        value = 0.01
-    return value
-
-def clean_text_value(text):
-    if pd.isna(text) or text is None:
-        return "missing"
-    text = str(text).strip().lower()
-    text = text.replace('\n', ' ').replace('\r', ' ')
-    text = ''.join([c if c.isalnum() or c.isspace() else ' ' for c in text])
-    text = ' '.join(text.split())
-    return text
-
-def convert_to_serializable(obj):
-    if isinstance(obj, (np.integer, np.int64)):
-        return int(obj)
-    elif isinstance(obj, (np.floating, np.float64)):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
-        return {k: convert_to_serializable(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_to_serializable(i) for i in obj]
-    return obj
-
-def prepare_date_features(input_data, date_feature_names):
-    date_features = {}
-    if 'CONSTRUCTION_START_DATE' in input_data and 'SUBSTANTIAL_COMPLETION_DATE' in input_data:
-        try:
-            start_str = input_data.get('CONSTRUCTION_START_DATE', '')
-            end_str = input_data.get('SUBSTANTIAL_COMPLETION_DATE', '')
-            if start_str and end_str:
-                start_date = pd.to_datetime(start_str, errors='coerce')
-                end_date = pd.to_datetime(end_str, errors='coerce')
-                if not pd.isna(start_date) and not pd.isna(end_date):
-                    date_features['construction_duration_days'] = (end_date - start_date).days
-        except:
-            pass
-    if 'invoiceDate' in input_data:
-        try:
-            invoice_str = input_data.get('invoiceDate', '')
-            if invoice_str:
-                invoice_date = pd.to_datetime(invoice_str, errors='coerce')
-                if not pd.isna(invoice_date):
-                    date_features['invoice_year'] = invoice_date.year
-                    date_features['invoice_month'] = invoice_date.month
-                    date_features['invoice_day'] = invoice_date.day
-                    date_features['invoice_dayofweek'] = invoice_date.dayofweek
-                    date_features['invoice_quarter'] = invoice_date.quarter
-        except:
-            pass
+@app.route('/procurement', methods=['POST'])
+def procurement():
+    """Main endpoint for procurement analysis"""
+    if not system:
+        init_system()
     
-    date_df = pd.DataFrame(columns=date_feature_names)
-    for feature in date_feature_names:
-        if feature in date_features:
-            date_df.at[0, feature] = date_features[feature]
-        else:
-            date_df.at[0, feature] = np.nan
-    return date_df
-
-def prepare_features(input_data, tfidf_vectorizer, numeric_imputer, date_imputer, categorical_mapping, date_feature_names):
-    cleaned_desc = clean_text_value(input_data.get('ItemDescription', ''))
-    X_text = tfidf_vectorizer.transform([cleaned_desc])
-    numeric_features = ['ExtendedQuantity', 'UnitPrice', 'ExtendedPrice', 'invoiceTotal']
-    numeric_values = []
-    for feat in numeric_features:
-        value = input_data.get(feat, 0)
-        cleaned_value = clean_numeric_value(value, replace_zero_epsilon=(feat in ['UnitPrice', 'ExtendedPrice']))
-        if cleaned_value is None or np.isnan(cleaned_value):
-            cleaned_value = 0
-        numeric_values.append(cleaned_value)
-    
-    numeric_values = [np.log1p(x) if x >= 0 else 0 for x in numeric_values]
-    X_numeric = numeric_imputer.transform([numeric_values])
-    date_df = prepare_date_features(input_data, date_feature_names)
-    X_date = date_imputer.transform(date_df)
-    
-    cat_cols = ['PROJECT_CITY', 'STATE', 'PROJECT_COUNTRY', 'CORE_MARKET', 'PROJECT_TYPE', 'UOM']
-    cat_features = []
-    for c in cat_cols:
-        value = str(input_data.get(c, 'missing')).lower().strip()
-        if c in categorical_mapping:
-            top_categories = categorical_mapping[c]
-            if value in top_categories:
-                cat_features.extend([1 if value == cat else 0 for cat in top_categories])
-                cat_features.append(0)
-            else:
-                cat_features.extend([0] * len(top_categories))
-                cat_features.append(1)
-    
-    X_categorical = np.array([cat_features])
-    X_combined = sparse.hstack([X_text, sparse.csr_matrix(X_numeric), sparse.csr_matrix(X_date), sparse.csr_matrix(X_categorical)]).tocsr()
-    return X_combined
-
-def run_ml_prediction(input_data: Dict[str, Any]) -> Dict[str, Any]:
-    try:
-        available_files, missing_files = check_files()
-        if 'tfidf_vectorizer.pkl' not in available_files:
-            return {'error': 'TFIDF vectorizer missing'}
-        
-        tfidf_vectorizer = joblib.load('tfidf_vectorizer.pkl')
-        numeric_imputer = joblib.load('numeric_imputer.pkl')
-        date_imputer = joblib.load('date_imputer.pkl')
-        categorical_mapping = joblib.load('categorical_mapping.pkl')
-        det_items = joblib.load('deterministic_mapping_full.pkl') if 'deterministic_mapping_full.pkl' in available_files else pd.Series()
-        date_feature_names = joblib.load('date_feature_names.pkl') if 'date_feature_names.pkl' in available_files else [
-            'construction_duration_days', 'invoice_year', 'invoice_month', 'invoice_day', 'invoice_dayofweek', 'invoice_quarter']
-        
-        regression_available = 'xgb_regressor_full.pkl' in available_files
-        if regression_available:
-            xgb_regressor = joblib.load('xgb_regressor_full.pkl')
-        
-        classification_available = all(f in available_files for f in ['xgb_classifier_full.pkl', 'label_encoder_full.pkl', 'class_mapping_full.pkl'])
-        if classification_available:
-            xgb_classifier = joblib.load('xgb_classifier_full.pkl')
-            label_encoder = joblib.load('label_encoder_full.pkl')
-            class_mapping = joblib.load('class_mapping_full.pkl')
-        
-        X_features = prepare_features(input_data, tfidf_vectorizer, numeric_imputer, date_imputer, categorical_mapping, date_feature_names)
-        cleaned_desc = clean_text_value(input_data.get('ItemDescription', ''))
-        
-        if cleaned_desc in det_items.index:
-            master_item_no = det_items[cleaned_desc]
-            prediction_method = "deterministic"
-        elif classification_available:
-            X_dense = X_features.toarray()
-            pred_encoded = xgb_classifier.predict(X_dense)
-            pred_processed = label_encoder.inverse_transform(pred_encoded)
-            master_item_no = class_mapping.get(pred_processed[0], 'unknown')
-            prediction_method = "classification_model"
-        else:
-            master_item_no = "unknown"
-            prediction_method = "no_model"
-        
-        if regression_available:
-            X_dense = X_features.toarray()
-            qty_shipped = xgb_regressor.predict(X_dense)[0]
-            qty_shipped = max(1, int(qty_shipped))
-        else:
-            extended_qty = clean_numeric_value(input_data.get('ExtendedQuantity', 1))
-            qty_shipped = max(1, int(extended_qty)) if extended_qty else 1
-            
-        result = {'master_item_no': master_item_no, 'qty_shipped': qty_shipped, 'prediction_method': prediction_method}
-        return convert_to_serializable(result)
-    except Exception as e:
-        return {'error': str(e)}
-
-def generate_ml_input(query: str, material: str, groq_api_key: str) -> Dict[str, Any]:
-    prompt = f"""
-Project: {query}
-Material: {material}
-Generate a valid JSON dictionary with double quotes around all keys and string values. Structure:
-{{
-  "ItemDescription": "description with {material}",
-  "ExtendedQuantity": 100,
-  "UnitPrice": 1000,
-  "ExtendedPrice": 100000,
-  "invoiceTotal": 1000000,
-  "CONSTRUCTION_START_DATE": "2026-01-01",
-  "SUBSTANTIAL_COMPLETION_DATE": "2026-12-31",
-  "invoiceDate": "2025-09-14",
-  "PROJECT_CITY": "Navi Mumbai",
-  "STATE": "Maharashtra",
-  "PROJECT_COUNTRY": "India",
-  "CORE_MARKET": "Construction",
-  "PROJECT_TYPE": "Commercial",
-  "UOM": "Units",
-  "Material": "{material}"
-}}
-Output only JSON.
-"""
-    if len(prompt) > 3000: prompt = prompt[:3000] + "\n... (truncated)"
-    try:
-        headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
-        payload = {"model": "llama-3.1-8b-instant", "messages": [{"role": "user", "content": prompt}], "max_tokens": 512}
-        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        if 'choices' in data:
-            content = data['choices'][0]['message']['content'].strip()
-            content = re.sub(r"(\w+):", r'"\1":', content)
-            content = content.replace("'", '"')
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group())
-        return {'error': 'Failed to parse JSON from API response'}
-    except Exception as e:
-        return {'error': f"ML input generation error: {str(e)}"}
-
-def generate_timeline(materials: List[Dict], query: str, groq_api_key: str) -> str:
-    material_list = "\n".join([f"- {m['Material/Equipment']}: {m['Quantity']}" for m in materials[:1]])
-    prompt = f"""
-Date: September 14, 2025
-Project: {query[:100]}
-Materials:
-{material_list}
-Generate procurement timeline in this exact structured Markdown format.
-Output of Procurement Timeline:
-1. Electrical Equipment
-| Item | Lead Time | Order By | Delivery Window | Notes |
-|------|-----------|----------|-----------------|-------|
-| Transformers | 50 weeks | Feb 1, 2026 | Dec 2026 | Potential delays |
-Use typical lead times.
-"""
-    try:
-        headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
-        payload = {"model": "llama-3.1-8b-instant", "messages": [{"role": "user", "content": prompt}], "max_tokens": 512}
-        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        return data['choices'][0]['message']['content']
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-def generate_schedule(materials: List[Dict], query: str, groq_api_key: str) -> str:
-    material_list = "\n".join([f"- {m['Material/Equipment']}: {m['Quantity']}" for m in materials[:1]])
-    prompt = f"""
-Date: September 14, 2025
-Project: {query[:100]}
-Materials:
-{material_list}
-Generate construction schedule in this exact structured Markdown format.
-WBS Level 2: 1. Design & Engineering
-| ID | Task | Duration | Start | Finish | Notes |
-|----|------|----------|-------|--------|-------|
-| 1.1 | Conceptual Design | 30 days | 01-Jan-2026 | 30-Jan-2026 | 30% Design |
-"""
-    try:
-        headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
-        payload = {"model": "llama-3.1-8b-instant", "messages": [{"role": "user", "content": prompt}], "max_tokens": 512}
-        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        return data['choices'][0]['message']['content']
-    except Exception as e:
-        return f"Error: {str(e)}"
-    
-def extract_vendor_details(answer: str) -> List[Dict[str, str]]:
-    """Extract list of vendors from RAG answer"""
-    vendors = []
-    # Pattern to match "1. Company Name: ... Rating: ..." blocks
-    # Looking for blocks that might look like:
-    # 1. Company Name: XYZ
-    #    Address: ...
-    #    GST Status: ...
-    #    Rating: ...
-    
-    # We'll split by "Company Name:" to find segments
-    segments = answer.split("Company Name:")
-    for segment in segments[1:]: # Skip first empty chunk
-        try:
-            company = segment.split("\n")[0].strip()
-            
-            address = "N/A"
-            address_match = re.search(r'Address:(.*?)(?:GST|Rating|\n\w+:|$)', segment, re.DOTALL)
-            if address_match:
-                address = address_match.group(1).strip()
-                
-            gst = "N/A"
-            gst_match = re.search(r'GST Status:(.*?)(?:Rating|\n\w+:|$)', segment, re.DOTALL)
-            if gst_match:
-                gst = gst_match.group(1).strip()
-                
-            rating = "N/A"
-            rating_match = re.search(r'Rating:(.*?)(?:\n|$)', segment)
-            if rating_match:
-                rating = rating_match.group(1).strip()
-
-            vendors.append({
-                "company": company,
-                "address": address,
-                "gst": gst,
-                "rating": rating
-            })
-        except Exception as e:
-            continue
-            
-    return vendors
-
-# Routes
-@app.route('/chat', methods=['POST'])
-def chat():
-    if not rag:
-        init_rag()
     data = request.json
-    query = data.get('query')
+    query = data.get('query', '')
+    
     if not query:
         return jsonify({"error": "No query provided"}), 400
     
     try:
-        result = rag.query(query)
-        
-        # Enriched response with vendor extraction
-        material_estimates = result.get('material_estimates', [])
-        vendor_details = []
-        # Get top 3 materials for vendor search
-        for mat in material_estimates[:3]:
-             vendor_query = f"""Find 3 distinct suppliers for {mat['Material/Equipment']} in Navi Mumbai.
-             List them with Company Name, Address, GST, and Rating.
-             Format:
-             1. Company Name: ...
-                Address: ...
-                GST Status: ...
-                Rating: ...
-             """
-             try:
-                 # Increase k to get more potential vendor docs
-                 vendor_result = rag.query(vendor_query, k=3, apply_filters=False)
-                 vendors = extract_vendor_details(vendor_result['answer'])
-                 
-                 for v in vendors:
-                     vendor_details.append({
-                         "material": mat['Material/Equipment'],
-                         "vendor": f"Company: {v['company']}, Rating: {v['rating']}" 
-                     })
-             except Exception as e:
-                 print(f"Vendor fetch error: {e}")
-
-        result['vendor_details'] = vendor_details
-        return jsonify(result)
+        report = system.generate_procurement_report(query)
+        return jsonify(report)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    data = request.json
-    query = data.get('query')
-    material = data.get('material')
-    if not query or not material:
-        return jsonify({"error": "Missing query or material"}), 400
+@app.route('/search_vendors', methods=['POST'])
+def search_vendors():
+    """Search vendors for specific material"""
+    if not system:
+        init_system()
     
-    print(f"Predict called with query: {query}, material: {material}")
-    ml_input = generate_ml_input(query, material, rag.groq_api_key if rag else os.getenv("GROQ_API_KEY"))
-    if 'error' in ml_input:
-        print(f"ML Input Generation Error: {ml_input['error']}")
-        return jsonify(ml_input), 500 # Propagate error
-        
-    prediction = run_ml_prediction(ml_input)
-    print(f"Prediction result: {prediction}")
-    return jsonify(prediction)
+    data = request.json
+    material = data.get('material', '')
+    location = data.get('location', '')
+    
+    if not material:
+        return jsonify({"error": "Material not specified"}), 400
+    
+    try:
+        vendors = system.search_vendors(material, location, k=10)
+        return jsonify({"vendors": vendors})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/schedule', methods=['POST'])
-def schedule():
-    data = request.json
-    query = data.get('query')
-    materials = data.get('materials', [])
-    if not query:
-        return jsonify({"error": "Missing query"}), 400
-        
-    timeline = generate_timeline(materials, query, rag.groq_api_key if rag else os.getenv("GROQ_API_KEY"))
-    schedule = generate_schedule(materials, query, rag.groq_api_key if rag else os.getenv("GROQ_API_KEY"))
-    
-    return jsonify({
-        "timeline_markdown": timeline,
-        "schedule_markdown": schedule
-    })
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "healthy", "documents_loaded": len(system.documents) if system else 0})
 
 if __name__ == '__main__':
-    init_rag() # pre-initialize
+    init_system()
     app.run(host='0.0.0.0', port=5001, debug=True)
