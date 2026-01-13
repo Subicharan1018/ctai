@@ -20,6 +20,7 @@ from dateutil.relativedelta import relativedelta
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
+
 warnings.filterwarnings('ignore')
 
 # Load environment variables

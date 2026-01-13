@@ -1,6 +1,6 @@
 # 🏗 Construction Tech AI (CTAI)
 
-[🔗 **GitHub Repository**](https://github.com/Subicharan1018/ctai) · [🌐 **Deployed Solution (Ngrok)**](https://xglink.vercel.app/)
+[🔗 **GitHub Repository**](https://github.com/Subicharan1018/ctai) · [🌐 **Deployed Solution (Ngrok)**](https://xglink.ve rcel.app/)
 
 An AI-powered platform designed to transform the **construction industry** with smart insights, automation, and real-time project assistance.  
 This project uses cleaned construction datasets to support tasks such as `MasterItemNo` classification and `QtyShipped` regression, and provides an interactive interface via **Streamlit**.
