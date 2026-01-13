@@ -1,101 +1,102 @@
-# 🏗 Construction Tech AI (CTAI)
+# Construction Procurement AI Assistant - Setup Guide
 
-[🔗 **GitHub Repository**](https://github.com/Subicharan1018/ctai) · [🌐 **Deployed Solution (Ngrok)**](https://xglink.ve rcel.app/)
+This project is a modern AI-powered construction procurement assistant that uses NLP and RAG (Retrieval Augmented Generation) to analyze project requirements, estimate materials, find vendors, and generate project schedules.
 
-An AI-powered platform designed to transform the **construction industry** with smart insights, automation, and real-time project assistance.  
-This project uses cleaned construction datasets to support tasks such as `MasterItemNo` classification and `QtyShipped` regression, and provides an interactive interface via **Streamlit**.
+## Project Structure
 
----
+- `backend_api/`: Flask-based Python backend with AI search capabilities
+- `frontend/`: React + Vite frontend for the user interface
 
-## 📌 Overview
-Construction projects often face challenges such as delays, cost overruns, and mismanagement. **CTAI** helps tackle these challenges by:  
-- 📊 Providing data-driven recommendations.  
-- ⚡ Automating repetitive tasks.  
-- 🧠 Offering AI-powered decision support.  
-- 🌍 Deploying a user-friendly interface accessible on **Streamlit**.
+## 🚀 Backend Setup
 
----
+The backend handles the AI logic, search index, and API endpoints.
 
-## 🎯 Objectives
-- Simplify **construction project tracking**.  
-- Enable **real-time collaboration** across teams.  
-- Use AI to provide **insights and risk predictions**.  
-- Make the solution easily accessible through the cloud.
+### Prerequisites
+- Python 3.8 or higher
+- Groq API Key (for AI analysis)
 
----
+### Installation Steps
 
-## 🛠 Installation & Setup
+1. **Navigate to the backend directory:**
+   ```bash
+   cd backend_api
+   ```
 
-Follow the steps below to set up the project locally.
+2. **Create and activate a virtual environment (recommended):**
+   ```bash
+   # On macOS/Linux
+   python3 -m venv venv
+   source venv/bin/activate
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/Subicharan1018/ctai.git
-cd ctai
-cd xgboost
-```
+   # On Windows
+   python -m venv venv
+   .\venv\Scripts\activate
+   ```
 
-### 2. Install Dependencies
-```bash
-pip install streamlit pandas numpy scikit-learn joblib sentence-transformers faiss-cpu requests python-dotenv pyngrok matplotlib python-dateutil
-```
+3. **Install required dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   > **Note:** If `requirements.txt` is missing, install manually:
+   > `pip install flask flask-cors python-dotenv pandas sentence-transformers faiss-cpu numpy requests`
 
-### 3. Set Up Environment Variables
-Create a `.env` file in the project directory and add your Groq API key:
-```env
-GROQ_API_KEY=your_groq_api_key_here
-```
+4. **Set up Environment Variables:**
+   - Create a `.env` file in the `backend_api` directory (if not exists)
+   - Add your Groq API key:
+     ```
+     GROQ_API_KEY=your_api_key_here
+     ```
 
----
-## To generate the submission.csv file Run the xgboost_sep1.ipynb file to generate the submission.csv file
+5. **Run the Server:**
+   ```bash
+   python3 app.py
+   ```
+   The server will start on `http://localhost:5001`.
+   
+   > Initial startup may take a moment to load the AI models and build the search index. Watch for "Procurement System Initialized" in the console.
 
-## ▶️ How to Run the Code
+## 💻 Frontend Setup
 
-### Option 1: Run with Streamlit (Recommended)
-```bash
-streamlit run app.py
-```
+The frontend provides a modern chat interface and data visualization.
 
-### Option 2: Run with Ngrok Tunnel
-```bash
-python ngrok_app.py
-```
+### Prerequisites
+- Node.js (v16 or higher)
+- npm or yarn
 
-### Option 3: Run Command Line Interface
-```bash
-python run.py
-```
+### Installation Steps
 
----
+1. **Navigate to the frontend directory:**
+   ```bash
+   cd frontend
+   ```
 
-## 🌐 Deployed Solutions
-- **Ngrok Deployment**: [https://xglink.vercel.app/](https://xglink.vercel.app/)
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
----
+3. **Run the Development Server:**
+   ```bash
+   npm run dev
+   ```
+   The app will be available at `http://localhost:5173`.
 
-## 📁 Project Structure
+## 🔄 Using the Application
 
-- `app.py`: Main Streamlit application
-- `ngrok_app.py`: Streamlit application with Ngrok tunneling
-- `run.py`: Command-line interface for predictions
-- `xgboost_sep1.ipynb`: Jupyter notebook with model training
-- `json/`: Directory containing product data in JSON format
-- `*.pkl`: Pre-trained models and preprocessing objects
+1. Ensure BOTH backend (`port 5001`) and frontend (`port 5173`) are running.
+2. Open `http://localhost:5173` in your browser.
+3. In the chat input, describe your project. Example:
+   > "25 MegaWatt Data Center in Navi Mumbai, 2 Lakh sqft built up area, budget 100 Crores"
+   
+4. The AI will provide:
+   - **Analysis**: Detailed project breakdown
+   - **Materials**: Required construction materials prioritized by AI
+   - **Budget**: Cost estimation
+   - **Vendors**: Matched vendors from the database (e.g., specific to Navi Mumbai)
+   - **Schedule**: A Gantt chart showing project phases
 
----
+## 🛠️ Troubleshooting
 
-## 🤖 Features
-
-- **Smart Procurement Planning**: Get material estimates based on project specifications
-- **Vendor Identification**: Find suppliers with specific criteria (location, ratings, etc.)
-- **Procurement Timeline**: Generate lead times and delivery schedules
-- **Project Scheduling**: Integrated construction schedule with Gantt charts
-- **ML Predictions**: Predict item classifications and quantities using XGBoost models
-
----
-
-## 📚 Usage
-
-1. Enter project details in the text area (e.g., "25 MegaWatt, 2 Lacs SquareFoot Built Up Area, Project Volume of 1875 Cr in Rupees, Build in Navi Mumbai Area")
-2. Click "Generate Procurement Plan"
-3. View material estimates, vendor information, timelines, and schedules
+- **Backend fails to start:** Check if port 5001 is already in use.
+- **"Module not found" error:** Ensure you activated the virtual environment and ran `pip install -r requirements.txt`.
+- **Frontend API errors:** Verify the backend is running and the CORS configuration in `app.py` allows `localhost:5173`.
