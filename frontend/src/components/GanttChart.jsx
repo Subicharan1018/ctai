@@ -1,5 +1,8 @@
 import { motion } from 'framer-motion';
 import { Calendar, Clock, ChevronRight, TrendingUp } from 'lucide-react';
+import { Card, Row, Col, Statistic, Typography } from 'antd';
+
+const { Title, Text } = Typography;
 
 export function GanttChart({ schedule }) {
     const { phases, total_duration, total_months, start_date, end_date } = schedule;
@@ -49,69 +52,60 @@ export function GanttChart({ schedule }) {
     const monthMarkers = generateMonthMarkers();
 
     return (
-        <div className="space-y-7">
+        <div className="space-y-6">
             {/* Header Card */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="glass-card p-7 bg-linear-to-br from-purple-600/10 via-pink-600/10 to-blue-600/5 border-purple-500/20"
-            >
+            <Card bordered={false} className="bg-[#1e293b]/70 backdrop-blur-md border border-white/5 shadow-xl">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg pulse-glow">
-                            <Calendar className="w-6 h-6 text-white" />
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-pink-500/20 rounded-xl flex items-center justify-center border border-pink-500/20">
+                            <Calendar className="w-6 h-6 text-pink-400" />
                         </div>
                         <div>
-                            <h3 className="text-2xl font-bold gradient-text">Project Timeline</h3>
-                            <p className="text-slate-400 text-sm flex items-center gap-2 mt-1">
-                                <Clock className="w-3 h-3" />
+                            <Title level={4} style={{ color: 'white', margin: 0, fontWeight: 600 }}>Project Timeline</Title>
+                            <span className="text-slate-400 flex items-center gap-2">
+                                <Clock size={14} />
                                 {formatDate(start_date)} → {formatDate(end_date)}
-                            </p>
+                            </span>
                         </div>
                     </div>
                     <div className="text-right">
-                        <p className="text-sm text-slate-400">Duration</p>
-                        <p className="text-3xl font-bold text-white">{total_months}</p>
-                        <p className="text-sm text-purple-400">months</p>
+                        <span className="text-slate-400 block text-sm">Duration</span>
+                        <div className="text-2xl font-bold text-white tracking-tight">{total_months}</div>
+                        <span className="text-purple-400 text-sm font-medium">months</span>
                     </div>
                 </div>
-            </motion.div>
+            </Card>
 
             {/* Gantt Chart */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="glass-card p-6"
+            <Card
+                title={<span className="text-white flex items-center gap-2 font-semibold"><TrendingUp size={18} className="text-cyan-400" /> Phase Timeline</span>}
+                className="bg-[#1e293b]/60 backdrop-blur-md border border-white/5"
+                bordered={false}
             >
-                <h4 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-cyan-400" />
-                    Phase Timeline
-                </h4>
 
                 {/* Timeline Header */}
-                <div className="relative h-10 mb-3">
+                <div className="relative h-8 mb-4">
                     <div className="absolute inset-0 flex items-center">
                         {monthMarkers.map((marker, idx) => (
                             <div
                                 key={idx}
-                                className="absolute text-xs font-semibold text-slate-400"
+                                className="absolute text-xs font-semibold text-slate-500 border-l border-slate-700 pl-1 h-3"
                                 style={{ left: `${marker.percent}%` }}
                             >
-                                📅 {marker.label}
+                                <span className="absolute -top-5 left-0 whitespace-nowrap">{marker.label}</span>
                             </div>
                         ))}
                     </div>
                 </div>
 
                 {/* Timeline Grid */}
-                <div className="relative bg-linear-to-br from-slate-800/60 to-slate-700/40 rounded-2xl p-6 border border-slate-700/50">
+                <div className="relative bg-[#0f172a]/50 rounded-xl p-6 border border-white/5">
                     {/* Grid lines */}
-                    <div className="absolute inset-6 flex">
+                    <div className="absolute inset-x-6 top-6 bottom-6 flex pointer-events-none">
                         {monthMarkers.map((marker, idx) => (
                             <div
                                 key={idx}
-                                className="absolute h-full border-l border-slate-600/30"
+                                className="absolute h-full border-l border-slate-700/30"
                                 style={{ left: `${marker.percent}%` }}
                             />
                         ))}
@@ -124,21 +118,21 @@ export function GanttChart({ schedule }) {
                                 key={phase.id}
                                 initial={{ opacity: 0, x: -30 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                whileHover={{ scale: 1.02 }}
-                                transition={{ delay: index * 0.1, type: "spring", stiffness: 300 }}
-                                className="flex items-center gap-4"
+                                whileHover={{ scale: 1.01 }}
+                                transition={{ delay: index * 0.1 }}
+                                className="flex items-center gap-4 group"
                             >
                                 {/* Phase Name */}
-                                <div className="w-56 shrink-0">
-                                    <span className="text-sm font-semibold text-white truncate block">
+                                <div className="w-48 shrink-0">
+                                    <Text strong style={{ color: 'white', display: 'block' }} ellipsis>
                                         {phase.name}
-                                    </span>
+                                    </Text>
                                     <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-xs text-slate-400">
+                                        <Text type="secondary" style={{ fontSize: '11px', color: '#94a3b8' }}>
                                             {phase.duration} days
-                                        </span>
+                                        </Text>
                                         {phase.progress > 0 && (
-                                            <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/30">
+                                            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/20">
                                                 {phase.progress}%
                                             </span>
                                         )}
@@ -146,39 +140,22 @@ export function GanttChart({ schedule }) {
                                 </div>
 
                                 {/* Gantt Bar Container */}
-                                <div className="flex-1 relative h-12">
+                                <div className="flex-1 relative h-10 bg-slate-800/50 rounded-lg overflow-hidden border border-white/5 shadow-inner">
                                     <motion.div
-                                        className="absolute h-full rounded-xl flex items-center px-3 overflow-hidden shadow-lg group"
+                                        className="absolute h-full rounded shadow-lg flex items-center px-3 overflow-hidden cursor-help backdrop-brightness-110"
                                         style={{
                                             left: `${getLeftPercent(phase.startDate)}%`,
                                             width: `${getWidthPercent(phase.duration)}%`,
                                             backgroundColor: phase.color,
-                                            minWidth: '80px'
+                                            minWidth: '60px'
                                         }}
                                         initial={{ scaleX: 0 }}
                                         animate={{ scaleX: 1 }}
-                                        transition={{ delay: index * 0.1 + 0.3, duration: 0.6, ease: "easeOut" }}
-                                        whileHover={{ y: -4 }}
+                                        transition={{ delay: index * 0.1 + 0.3, duration: 0.6 }}
                                     >
-                                        {/* Progress overlay */}
-                                        {phase.progress > 0 && (
-                                            <div
-                                                className="absolute inset-0 bg-white/30 transition-all"
-                                                style={{ width: `${phase.progress}%` }}
-                                            />
-                                        )}
-                                        <span className="text-xs text-white font-bold relative z-10 truncate">
+                                        <span className="text-[10px] text-white font-bold truncate mix-blend-difference drop-shadow-md">
                                             {phase.duration}d
                                         </span>
-                                        {/* Hover tooltip */}
-                                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block">
-                                            <div className="bg-slate-900 text-white text-xs px-3 py-2 rounded-lg shadow-xl border border-slate-700 whitespace-nowrap">
-                                                <div className="font-semibold">{phase.name}</div>
-                                                <div className="text-slate-400 text-xs mt-1">
-                                                    {formatDate(phase.startDate)} - {formatDate(phase.endDate)}
-                                                </div>
-                                            </div>
-                                        </div>
                                     </motion.div>
                                 </div>
                             </motion.div>
@@ -189,63 +166,52 @@ export function GanttChart({ schedule }) {
                 {/* Legend */}
                 <div className="mt-6 flex flex-wrap gap-3">
                     {phases.map((phase, idx) => (
-                        <motion.div 
-                            key={phase.id}
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ delay: 0.5 + idx * 0.05 }}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700/50"
-                        >
-                            <div
-                                className="w-4 h-4 rounded shadow-lg"
-                                style={{ backgroundColor: phase.color }}
-                            />
-                            <span className="text-xs text-slate-300 font-medium">{phase.name}</span>
-                        </motion.div>
+                        <div key={phase.id} className="flex items-center gap-2 px-2 py-1 bg-white/5 rounded border border-white/5">
+                            <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: phase.color }} />
+                            <span className="text-xs text-slate-400 font-medium">{phase.name}</span>
+                        </div>
                     ))}
                 </div>
-            </motion.div>
+            </Card>
 
             {/* Summary Stats */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="glass-card p-6"
+            <Card
+                title={<span className="text-white flex items-center gap-2 font-semibold"><ChevronRight size={18} className="text-cyan-400" /> Project Statistics</span>}
+                className="bg-[#1e293b]/60 backdrop-blur-md border border-white/5"
+                bordered={false}
             >
-                <h4 className="text-lg font-semibold text-white mb-5 flex items-center gap-2">
-                    <ChevronRight className="w-5 h-5 text-cyan-400" />
-                    Project Statistics
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <motion.div 
-                        whileHover={{ scale: 1.05, y: -4 }}
-                        className="stat-card bg-linear-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/30"
-                    >
-                        <div className="text-sm font-semibold text-purple-400 mb-2 uppercase tracking-wide">Total Phases</div>
-                        <div className="text-4xl font-bold text-purple-400">{phases.length}</div>
-                        <div className="text-xs text-purple-400/70 mt-1">Project stages</div>
-                    </motion.div>
-                    <motion.div 
-                        whileHover={{ scale: 1.05, y: -4 }}
-                        transition={{ delay: 0.05 }}
-                        className="stat-card bg-linear-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/30"
-                    >
-                        <div className="text-sm font-semibold text-blue-400 mb-2 uppercase tracking-wide">Timeline</div>
-                        <div className="text-4xl font-bold text-blue-400">{total_months}</div>
-                        <div className="text-xs text-blue-400/70 mt-1">Months duration</div>
-                    </motion.div>
-                    <motion.div 
-                        whileHover={{ scale: 1.05, y: -4 }}
-                        transition={{ delay: 0.1 }}
-                        className="stat-card bg-linear-to-br from-cyan-500/20 to-cyan-600/10 border border-cyan-500/30"
-                    >
-                        <div className="text-sm font-semibold text-cyan-400 mb-2 uppercase tracking-wide">Total Days</div>
-                        <div className="text-4xl font-bold text-cyan-400">{total_duration}</div>
-                        <div className="text-xs text-cyan-400/70 mt-1">Working days</div>
-                    </motion.div>
-                </div>
-            </motion.div>
+                <Row gutter={16}>
+                    <Col span={8}>
+                        <Card size="small" className="bg-purple-500/10 border-purple-500/20 shadow-inner">
+                            <Statistic
+                                title={<span className="text-purple-400 text-xs uppercase font-bold tracking-wider">Total Phases</span>}
+                                value={phases.length}
+                                valueStyle={{ color: '#d8b4fe', fontWeight: 'bold' }}
+                            />
+                        </Card>
+                    </Col>
+                    <Col span={8}>
+                        <Card size="small" className="bg-blue-500/10 border-blue-500/20 shadow-inner">
+                            <Statistic
+                                title={<span className="text-blue-400 text-xs uppercase font-bold tracking-wider">Timeline</span>}
+                                value={total_months}
+                                suffix={<span className="text-xs text-blue-400/70 ml-1 font-medium">Months</span>}
+                                valueStyle={{ color: '#93c5fd', fontWeight: 'bold' }}
+                            />
+                        </Card>
+                    </Col>
+                    <Col span={8}>
+                        <Card size="small" className="bg-cyan-500/10 border-cyan-500/20 shadow-inner">
+                            <Statistic
+                                title={<span className="text-cyan-400 text-xs uppercase font-bold tracking-wider">Total Days</span>}
+                                value={total_duration}
+                                suffix={<span className="text-xs text-cyan-400/70 ml-1 font-medium">Working Days</span>}
+                                valueStyle={{ color: '#67e8f9', fontWeight: 'bold' }}
+                            />
+                        </Card>
+                    </Col>
+                </Row>
+            </Card>
         </div>
     );
 }

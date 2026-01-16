@@ -1,6 +1,9 @@
 import { motion } from 'framer-motion';
 import { VendorCard } from './VendorCard';
-import { Users, Store } from 'lucide-react';
+import { Store } from 'lucide-react';
+import { Card, Row, Col, Typography, Statistic, Empty } from 'antd';
+
+const { Title, Text } = Typography;
 
 export function VendorRecommendations({ vendorRecommendations }) {
     const materials = Object.entries(vendorRecommendations).filter(
@@ -9,69 +12,60 @@ export function VendorRecommendations({ vendorRecommendations }) {
 
     if (materials.length === 0) {
         return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="glass-card p-8 text-center"
-            >
-                <Store className="w-16 h-16 text-slate-500 mx-auto mb-4" />
-                <p className="text-slate-400 text-lg">No vendor recommendations available</p>
-                <p className="text-slate-500 text-sm mt-2">Try analyzing a project first</p>
-            </motion.div>
+            <Card bordered={false} className="bg-[#1e293b]/70 backdrop-blur-md border border-white/5">
+                <Empty description={<span className="text-slate-400">No vendor recommendations available</span>} />
+            </Card>
         );
     }
 
     const totalVendors = materials.reduce((sum, [_, vendors]) => sum + vendors.length, 0);
 
     return (
-        <div className="space-y-7">
+        <div className="space-y-6">
             {/* Header Card */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="glass-card p-7 bg-linear-to-br from-cyan-600/10 via-blue-600/10 to-purple-600/5 border-cyan-500/20"
-            >
+            <Card bordered={false} className="bg-[#1e293b]/70 backdrop-blur-md border border-white/5 shadow-xl">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg">
-                            <Store className="w-6 h-6 text-white" />
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-cyan-500/20 rounded-xl flex items-center justify-center border border-cyan-500/20">
+                            <Store className="w-6 h-6 text-cyan-400" />
                         </div>
                         <div>
-                            <h3 className="text-2xl font-bold gradient-text">Vendor Recommendations</h3>
-                            <p className="text-slate-400 text-sm">Matched suppliers from database</p>
+                            <Title level={4} style={{ color: 'white', margin: 0, fontWeight: 600 }}>Vendor Recommendations</Title>
+                            <span className="text-slate-400">Matched suppliers from database</span>
                         </div>
                     </div>
                     <div className="text-right">
-                        <p className="text-sm text-slate-400">Total Vendors</p>
-                        <p className="text-3xl font-bold text-white">{totalVendors}</p>
-                        <p className="text-sm text-cyan-400">{materials.length} categories</p>
+                        <span className="text-slate-400 block text-sm">Total Groups</span>
+                        <div className="text-2xl font-bold text-white tracking-tight">{materials.length}</div>
+                        <span className="text-cyan-400 text-sm font-medium">{totalVendors} vendors found</span>
                     </div>
                 </div>
-            </motion.div>
+            </Card>
 
             {/* Vendor Grid */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-7">
+            <Row gutter={[24, 24]}>
                 {materials.map(([material, vendors], index) => (
-                    <motion.div
-                        key={material}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.08 }}
-                        className="glass-card p-6"
-                    >
-                        <div className="flex items-center justify-between mb-5">
-                            <h4 className="text-white font-bold text-lg flex items-center gap-3">
-                                <div className="w-3 h-3 rounded-full bg-linear-to-r from-cyan-400 to-blue-400 shadow-lg shadow-cyan-500/50" />
-                                {material}
-                            </h4>
-                            <span className="px-3 py-1.5 bg-linear-to-r from-blue-500/20 to-cyan-500/20 text-blue-300 rounded-xl text-sm font-semibold border border-blue-500/30">
-                                {vendors.length} vendor{vendors.length !== 1 ? 's' : ''}
-                            </span>
-                        </div>
-                        <VendorCard vendors={vendors} materialName={material} />
-                    </motion.div>
+                    <Col xs={24} xl={12} key={material}>
+                        <Card
+                            title={
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
+                                    <span className="text-white font-semibold">{material}</span>
+                                </div>
+                            }
+                            extra={
+                                <span className="text-xs bg-cyan-500/10 text-cyan-400 px-2 py-1 rounded border border-cyan-500/20 font-medium">
+                                    {vendors.length} vendor{vendors.length !== 1 ? 's' : ''}
+                                </span>
+                            }
+                            className="bg-[#1e293b]/60 backdrop-blur-md border border-white/5 h-full"
+                            bordered={false}
+                        >
+                            <VendorCard vendors={vendors} materialName={material} />
+                        </Card>
+                    </Col>
                 ))}
-            </div>
+            </Row>
         </div>
     );
 }

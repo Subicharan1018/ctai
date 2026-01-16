@@ -1,119 +1,85 @@
-import { motion } from 'framer-motion';
-import { Star, MapPin, ExternalLink, CheckCircle, AlertCircle, ShoppingBag, Award } from 'lucide-react';
+import React from 'react';
+import { Card, Typography, Tag, Button, Empty, Row, Col, Rate } from 'antd';
+import { MapPin, Phone, ExternalLink, Star } from 'lucide-react';
+
+const { Text, Title, Paragraph } = Typography;
 
 export function VendorCard({ vendors, materialName }) {
     if (!vendors || vendors.length === 0) {
-        return (
-            <div className="glass-card p-6 text-center border-slate-600/30">
-                <ShoppingBag className="w-12 h-12 text-slate-500 mx-auto mb-3" />
-                <p className="text-slate-400">No vendors found for {materialName}</p>
-            </div>
-        );
+        return <Empty description="No vendors found for this material" />;
     }
-
-    const renderStars = (rating) => {
-        const numRating = parseFloat(rating);
-        if (isNaN(numRating)) return null;
-
-        return (
-            <div className="flex items-center gap-1">
-                {[...Array(5)].map((_, i) => (
-                    <Star
-                        key={i}
-                        className={`w-4 h-4 transition-all ${
-                            i < Math.floor(numRating)
-                                ? 'fill-yellow-400 text-yellow-400'
-                                : 'text-slate-600'
-                        }`}
-                    />
-                ))}
-                <span className="text-slate-300 text-sm ml-2 font-semibold">{rating}</span>
-            </div>
-        );
-    };
 
     return (
         <div className="space-y-4">
             {vendors.map((vendor, index) => (
-                <motion.div
-                    key={`${vendor.vendor}-${index}`}
-                    initial={{ opacity: 0, scale: 0.95, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    whileHover={{ scale: 1.02, y: -4 }}
-                    transition={{ delay: index * 0.08, type: "spring", stiffness: 300 }}
-                    className="glass-card p-6 bg-linear-to-br from-slate-800/80 to-slate-700/50 border-slate-600/40 hover:border-cyan-500/50 shadow-xl hover:shadow-cyan-500/20 group"
+                <Card
+                    key={index}
+                    type="inner"
+                    bordered={false}
+                    className="bg-[#0f172a]/40 border border-white/5 hover:bg-[#0f172a]/60 transition-colors"
                 >
-                    {/* Header */}
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="w-2 h-2 rounded-full bg-linear-to-r from-cyan-400 to-blue-400" />
-                                <h5 className="text-white font-bold text-base line-clamp-1 group-hover:text-cyan-400 transition-colors">
-                                    {vendor.product}
-                                </h5>
+                    <div className="flex flex-col gap-3">
+                        {/* Header: Name and Rating */}
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <Text strong className="text-lg text-white block">
+                                    {vendor.vendor}
+                                </Text>
+                                {vendor.product && (
+                                    <Text className="text-slate-400 text-sm block mt-1">
+                                        {vendor.product}
+                                    </Text>
+                                )}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Award className="w-4 h-4 text-blue-400" />
-                                <p className="text-slate-300 text-sm font-medium">{vendor.vendor || 'Unknown Vendor'}</p>
-                            </div>
-                        </div>
-                        {vendor.url && (
-                            <motion.a
-                                whileHover={{ scale: 1.1, rotate: 15 }}
-                                whileTap={{ scale: 0.9 }}
-                                href={vendor.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center justify-center w-10 h-10 rounded-xl bg-linear-to-br from-cyan-500/20 to-blue-500/20 hover:from-cyan-500/30 hover:to-blue-500/30 border border-cyan-500/30 transition-all group-hover:border-cyan-500/50"
-                            >
-                                <ExternalLink className="w-5 h-5 text-cyan-400" />
-                            </motion.a>
-                        )}
-                    </div>
-
-                    {/* Location */}
-                    <div className="flex items-center gap-2 text-sm text-slate-400 mb-4 pb-4 border-b border-slate-700/50">
-                        <MapPin className="w-4 h-4 text-blue-400" />
-                        <span className="line-clamp-1">{vendor.location || 'Location not specified'}</span>
-                    </div>
-
-                    {/* Footer Info */}
-                    <div className="flex items-center justify-between">
-                        {/* Rating */}
-                        <div>
-                            {renderStars(vendor.rating) || (
-                                <span className="text-slate-500 text-sm flex items-center gap-1">
-                                    <Star className="w-4 h-4" />
-                                    No rating
-                                </span>
+                            {vendor.rating && vendor.rating !== 'N/A' && (
+                                <div className="flex items-center bg-yellow-500/10 px-2 py-1 rounded border border-yellow-500/20">
+                                    <Star size={14} className="text-yellow-400 mr-1 fill-yellow-400" />
+                                    <span className="text-yellow-400 font-medium">{vendor.rating}</span>
+                                </div>
                             )}
                         </div>
 
-                        {/* Availability Badge */}
-                        <div>
-                            {vendor.availability === 'In Stock' ? (
-                                <span className="badge badge-success shadow-lg shadow-green-500/20">
-                                    <CheckCircle className="w-3 h-3" />
-                                    In Stock
-                                </span>
-                            ) : (
-                                <span className="badge badge-warning shadow-lg shadow-amber-500/20">
-                                    <AlertCircle className="w-3 h-3" />
-                                    {vendor.availability || 'N/A'}
-                                </span>
+                        {/* Details: Location and Availability */}
+                        <div className="flex flex-wrap gap-y-2 gap-x-4 text-sm">
+                            {vendor.location && vendor.location !== 'N/A' && (
+                                <div className="flex items-center text-slate-400">
+                                    <MapPin size={14} className="mr-1.5 text-blue-400" />
+                                    {vendor.location}
+                                </div>
+                            )}
+                            {vendor.availability && vendor.availability !== 'N/A' && (
+                                <div className="flex items-center text-slate-400">
+                                    <span className={`w-2 h-2 rounded-full mr-2 ${vendor.availability.toLowerCase().includes('in stock') || vendor.availability.toLowerCase().includes('available')
+                                            ? 'bg-emerald-500'
+                                            : 'bg-amber-500'
+                                        }`} />
+                                    {vendor.availability}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer: Actions */}
+                        <div className="pt-2 mt-1 border-t border-white/5 flex items-center justify-between">
+                            {vendor.gst && vendor.gst !== 'N/A' && (
+                                <Tag className="bg-slate-800 border-slate-700 text-slate-500 m-0">
+                                    GST: {vendor.gst}
+                                </Tag>
+                            )}
+
+                            {vendor.url && (
+                                <Button
+                                    type="link"
+                                    href={vendor.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="p-0 h-auto text-cyan-400 hover:text-cyan-300 flex items-center ml-auto"
+                                >
+                                    Contact Supplier <ExternalLink size={14} className="ml-1.5" />
+                                </Button>
                             )}
                         </div>
                     </div>
-
-                    {/* GST Info if available */}
-                    {vendor.gst && vendor.gst !== 'N/A' && (
-                        <div className="mt-4 pt-4 border-t border-slate-700/50">
-                            <p className="text-xs text-slate-500">
-                                GST: <span className="text-slate-400 font-mono">{vendor.gst}</span>
-                            </p>
-                        </div>
-                    )}
-                </motion.div>
+                </Card>
             ))}
         </div>
     );
