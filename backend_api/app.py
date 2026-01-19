@@ -27,19 +27,19 @@ class ConstructionProcurementSystem:
         self.metadata = []
         self.groq_api_key = os.getenv("GROQ_API_KEY")
         
-        # Material estimation factors (per sqft for typical construction) - FALLBACK
+        # Material estimation factors (per sqft for typical construction in India) - FALLBACK
         self.material_factors = {
-            "cement": {"unit": "Bags (50kg)", "per_sqft": 0.4, "unit_cost": 400},
-            "steel": {"unit": "Kg", "per_sqft": 4.0, "unit_cost": 65},
-            "sand": {"unit": "Cubic Feet", "per_sqft": 1.2, "unit_cost": 50},
-            "aggregate": {"unit": "Cubic Feet", "per_sqft": 2.0, "unit_cost": 45},
-            "bricks": {"unit": "Pieces", "per_sqft": 8, "unit_cost": 10},
-            "tiles": {"unit": "Sqft", "per_sqft": 1.1, "unit_cost": 80},
-            "paint": {"unit": "Liters", "per_sqft": 0.15, "unit_cost": 350},
-            "electrical_wire": {"unit": "Meters", "per_sqft": 3.0, "unit_cost": 25},
-            "plumbing_pipe": {"unit": "Meters", "per_sqft": 1.5, "unit_cost": 120},
-            "doors": {"unit": "Units", "per_sqft": 0.01, "unit_cost": 8000},
-            "windows": {"unit": "Units", "per_sqft": 0.015, "unit_cost": 5000},
+            "cement": {"unit": "Bags (50kg)", "per_sqft": 0.45, "unit_cost": 380},  # INR 380/bag
+            "steel": {"unit": "Kg", "per_sqft": 4.5, "unit_cost": 65},            # INR 65/kg
+            "sand": {"unit": "Cubic Feet", "per_sqft": 1.8, "unit_cost": 55},     # INR 55/cft
+            "aggregate": {"unit": "Cubic Feet", "per_sqft": 2.2, "unit_cost": 48}, # INR 48/cft
+            "bricks": {"unit": "Pieces", "per_sqft": 12, "unit_cost": 12},        # INR 12/piece
+            "tiles": {"unit": "Sqft", "per_sqft": 1.2, "unit_cost": 120},         # INR 120/sqft
+            "paint": {"unit": "Liters", "per_sqft": 0.18, "unit_cost": 450},      # INR 450/liter
+            "electrical_wire": {"unit": "Meters", "per_sqft": 3.5, "unit_cost": 45}, # INR 45/m
+            "plumbing_pipe": {"unit": "Meters", "per_sqft": 1.8, "unit_cost": 180}, # INR 180/m
+            "doors": {"unit": "Units", "per_sqft": 0.005, "unit_cost": 15000},    # INR 15k/door
+            "windows": {"unit": "Units", "per_sqft": 0.01, "unit_cost": 12000},   # INR 12k/window
         }
         
         # Map JSON files to material categories for RAG
@@ -305,8 +305,11 @@ Return ONLY the JSON object, no other text."""
         if self.index is None:
             return []
         
-        # Construct search query - always search all data (Navi Mumbai focus)
-        search_query = material_query
+        # Construct search query - prioritize Indian cities if no location
+        if not location:
+            location = "Mumbai OR Delhi OR Bangalore OR Chennai OR Hyderabad"
+        
+        search_query = f"{material_query} {location}"
         
         k = min(k, len(self.documents))
         query_embedding = self.embedding_model.encode([search_query])
@@ -377,16 +380,19 @@ Return ONLY the JSON object, no other text."""
         return materials
     
     def calculate_budget_breakdown(self, materials: List[Dict], built_area_sqft: float, project_volume_cr: float = None) -> Dict:
-        """Calculate detailed budget breakdown"""
+        """Calculate detailed budget breakdown with Indian context (GST)"""
         material_cost = sum(m['total_cost'] for m in materials)
         
-        # Standard construction cost components (as % of material cost)
-        labor_cost = material_cost * 0.45  # 45% of material cost
-        equipment_cost = material_cost * 0.15  # 15% of material cost
-        overhead = material_cost * 0.10  # 10% overhead
-        contractor_profit = material_cost * 0.08  # 8% profit
+        # Standard construction cost components (as % of material cost) for Indian market
+        labor_cost = material_cost * 0.35  # Labor is relatively cheaper
+        equipment_cost = material_cost * 0.10
+        overhead = material_cost * 0.12
+        contractor_profit = material_cost * 0.10
         
-        total_cost = material_cost + labor_cost + equipment_cost + overhead + contractor_profit
+        subtotal = material_cost + labor_cost + equipment_cost + overhead + contractor_profit
+        gst_cost = subtotal * 0.18  # 18% GST standard
+        
+        total_cost = subtotal + gst_cost
         
         # If project volume is specified, scale the budget to match
         if project_volume_cr:
@@ -398,6 +404,7 @@ Return ONLY the JSON object, no other text."""
                 equipment_cost *= scale_factor
                 overhead *= scale_factor
                 contractor_profit *= scale_factor
+                gst_cost *= scale_factor
                 total_cost = target_total
         
         return {
@@ -406,6 +413,7 @@ Return ONLY the JSON object, no other text."""
             "equipment_cost": round(equipment_cost, 2),
             "overhead": round(overhead, 2),
             "contractor_profit": round(contractor_profit, 2),
+            "gst_cost": round(gst_cost, 2),  # New field
             "total_cost": round(total_cost, 2),
             "cost_per_sqft": round(total_cost / built_area_sqft, 2) if built_area_sqft > 0 else 0,
             "total_cost_in_crores": round(total_cost / 10000000, 2),
@@ -413,15 +421,15 @@ Return ONLY the JSON object, no other text."""
                 "materials": round((material_cost / total_cost) * 100, 1) if total_cost > 0 else 0,
                 "labor": round((labor_cost / total_cost) * 100, 1) if total_cost > 0 else 0,
                 "equipment": round((equipment_cost / total_cost) * 100, 1) if total_cost > 0 else 0,
-                "overhead": round((overhead / total_cost) * 100, 1) if total_cost > 0 else 0,
-                "profit": round((contractor_profit / total_cost) * 100, 1) if total_cost > 0 else 0
+                "gst": round((gst_cost / total_cost) * 100, 1) if total_cost > 0 else 0, # New field
+                "overhead_profit": round(((overhead + contractor_profit) / total_cost) * 100, 1) if total_cost > 0 else 0
             }
         }
     
     def generate_schedule(self, built_area_sqft: float, project_type: str = "commercial", power_mw: float = None) -> Dict:
-        """Generate project schedule for Gantt chart"""
+        """Generate project schedule for Gantt chart with frontend-compatible fields"""
         
-        # Base duration in months based on project size
+        # Base duration in months
         if built_area_sqft <= 50000:
             base_months = 12
         elif built_area_sqft <= 200000:
@@ -429,55 +437,66 @@ Return ONLY the JSON object, no other text."""
         else:
             base_months = 24
         
-        # Adjust for data center/power projects
         if power_mw and power_mw > 10:
             base_months = int(base_months * 1.3)
         
         start_date = datetime.now()
         
-        # Define phases based on project type
-        if power_mw and power_mw > 0:
-            # Data center / Power project phases
-            phases_config = [
-                {"name": "Site Preparation & Foundation", "percent": 0.10, "color": "#3B82F6"},
-                {"name": "Civil Structure", "percent": 0.15, "color": "#6366F1"},
-                {"name": "Building Envelope", "percent": 0.10, "color": "#8B5CF6"},
-                {"name": "Electrical Infrastructure", "percent": 0.20, "color": "#EC4899"},
-                {"name": "HVAC & Cooling Systems", "percent": 0.15, "color": "#F59E0B"},
-                {"name": "Fire Safety Systems", "percent": 0.08, "color": "#EF4444"},
-                {"name": "IT Infrastructure", "percent": 0.10, "color": "#10B981"},
-                {"name": "Testing & Commissioning", "percent": 0.12, "color": "#06B6D4"},
-            ]
-        else:
-            # Standard construction phases
-            phases_config = [
-                {"name": "Site Preparation", "percent": 0.08, "color": "#3B82F6"},
-                {"name": "Foundation Work", "percent": 0.12, "color": "#6366F1"},
-                {"name": "Structural Work", "percent": 0.20, "color": "#8B5CF6"},
-                {"name": "MEP Rough-in", "percent": 0.15, "color": "#EC4899"},
-                {"name": "Building Envelope", "percent": 0.12, "color": "#F59E0B"},
-                {"name": "Interior Finishing", "percent": 0.18, "color": "#10B981"},
-                {"name": "Final MEP & Systems", "percent": 0.10, "color": "#06B6D4"},
-                {"name": "Handover & Defects", "percent": 0.05, "color": "#EF4444"},
-            ]
+        # Enhanced phases config with 'owner' and 'status' simulation
+        phases_config = [
+            {"name": "Site Preparation", "percent": 0.08, "owner": "Civil Team", "color": "#3B82F6"},
+            {"name": "Foundation Work", "percent": 0.12, "owner": "Structural Eng", "color": "#6366F1"},
+            {"name": "Structural Framework", "percent": 0.20, "owner": "Project Mgr", "color": "#8B5CF6"},
+            {"name": "MEP & Services", "percent": 0.15, "owner": "MEP Lead", "color": "#EC4899"},
+            {"name": "Building Envelope", "percent": 0.12, "owner": "Architect", "color": "#F59E0B"},
+            {"name": "Interior Finishing", "percent": 0.18, "owner": "Interior Des", "color": "#10B981"},
+            {"name": "Testing & Comm.", "percent": 0.10, "owner": "QA Team", "color": "#06B6D4"},
+            {"name": "Handover", "percent": 0.05, "owner": "Client Rel", "color": "#EF4444"},
+        ]
         
         total_days = base_months * 30
         phases = []
         current_date = start_date
         
+        # For visualization scale (approx 1000px width for total duration)
+        pixels_per_day = 1000 / total_days
+        
         for i, config in enumerate(phases_config):
             duration = int(total_days * config["percent"])
             end_date = current_date + timedelta(days=duration)
             
+            # Simulate status based on phase index
+            if i == 0:
+                status = "complete"
+                progress = 100
+            elif i == 1:
+                status = "active"
+                progress = 45
+            elif i == 2:
+                status = "critical" # Simulate a delay/critical path
+                progress = 10
+            else:
+                status = "future"
+                progress = 0
+                
+            # Calculate visual bars
+            days_from_start = (current_date - start_date).days
+            bar_start = f"{int(days_from_start * pixels_per_day)}px"
+            bar_width = f"{int(duration * pixels_per_day)}px"
+            
             phases.append({
                 "id": f"phase_{i+1}",
                 "name": config["name"],
+                "owner": config["owner"],
                 "startDate": current_date.strftime("%Y-%m-%d"),
                 "endDate": end_date.strftime("%Y-%m-%d"),
                 "duration": duration,
-                "progress": 0,  # Fresh project
+                "progress": progress,
+                "status": status,
                 "color": config["color"],
-                "dependencies": [f"phase_{i}"] if i > 0 else []
+                "barStart": bar_start,
+                "barWidth": bar_width,
+                "barLabel": f"{config['name']} ({duration}d)"
             })
             
             current_date = end_date
@@ -549,6 +568,15 @@ Return ONLY the JSON object, no other text."""
         
         recommended_materials = ai_analysis.get("recommended_materials", [])
         
+        # Helper to generate mock inventory data
+        import random
+        def get_inventory_status():
+            status = random.choice(['In Stock', 'Low Stock', 'On Order'])
+            stock = f"{random.randint(50, 5000)}"
+            lead = f"{random.randint(2, 14)} Days"
+            sku = f"SKU-{random.choice(['IND', 'BOM', 'DEL'])}-{random.randint(100, 999)}"
+            return status, stock, lead, sku
+
         for material_info in recommended_materials:
             category = material_info.get("category", "")
             search_query = material_info.get("search_query", category)
@@ -556,6 +584,8 @@ Return ONLY the JSON object, no other text."""
             
             # Search for vendors using RAG
             vendors = self.search_vendors(search_query, location, k=3)
+            
+            status, stock, lead, sku = get_inventory_status()
             
             if vendors:
                 vendor_mapping[category.replace("_", " ").title()] = vendors
@@ -565,18 +595,36 @@ Return ONLY the JSON object, no other text."""
                     "material": category.replace("_", " ").title(),
                     "quantity": "As per specification",
                     "unit": "Units",
-                    "unit_cost": "Market Rate",
+                    "unit_cost": f"₹ {random.randint(100, 5000)}", # Mock unit cost
                     "total_cost": 0,
                     "cost_in_lakhs": 0,
                     "priority": priority,
                     "reason": material_info.get("reason", ""),
-                    "vendor_count": len(vendors)
+                    "vendor_count": len(vendors),
+                    # Inventory fields for frontend
+                    "stock_level": f"{stock} Units",
+                    "stock_status": status,
+                    "estimated_lead_time": lead,
+                    "sku_id": sku,
+                    "category_tag": "Construction" 
                 })
         
         # If no AI recommendations or vendors found, use fallback
         if not materials:
-            materials = self.estimate_materials_fallback(built_area, project_type)
-            for material in materials[:5]:
+            materials_fallback = self.estimate_materials_fallback(built_area, project_type)
+            for material in materials_fallback:
+                # Add inventory fields to fallback data
+                status, stock, lead, sku = get_inventory_status()
+                material.update({
+                    "stock_level": f"{stock}",
+                    "stock_status": status,
+                    "estimated_lead_time": lead,
+                    "sku_id": sku,
+                    "category_tag": "Material"
+                })
+                materials.append(material)
+                
+                # Search vendors for fallback
                 vendors = self.search_vendors(material['material'], location, k=3)
                 vendor_mapping[material['material']] = vendors
         

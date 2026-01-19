@@ -3,13 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+import { useProcurement } from '@/context/ProcurementContext';
+
 const LandingPage = () => {
-    const navigate = useNavigate();
+    // const navigate = useNavigate(); // handled in context
     const [query, setQuery] = useState('');
+    const { runAnalysis, isLoading } = useProcurement();
 
     const handleRunAnalysis = () => {
-        // Navigate to budget breakdown with query
-        navigate('/budget', { state: { query } });
+        if (!query.trim()) return;
+        runAnalysis(query);
     };
 
     return (
@@ -75,10 +78,11 @@ const LandingPage = () => {
                             </div>
                             <Button
                                 onClick={handleRunAnalysis}
-                                className="h-16 px-10 bg-warning-black text-caution font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 hover:bg-primary hover:text-white transition-colors rounded-lg"
+                                disabled={isLoading}
+                                className="h-16 px-10 bg-warning-black text-caution font-black uppercase tracking-widest text-sm flex items-center justify-center gap-3 hover:bg-primary hover:text-white transition-colors rounded-lg disabled:opacity-70"
                             >
-                                Run Analysis
-                                <span className="material-symbols-outlined">bolt</span>
+                                {isLoading ? 'Analyzing...' : 'Run Analysis'}
+                                {!isLoading && <span className="material-symbols-outlined">bolt</span>}
                             </Button>
                         </div>
                     </div>
