@@ -748,6 +748,34 @@ def search_vendors():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/vendors', methods=['GET'])
+def get_vendors():
+    """Get all vendors from the database"""
+    conn = get_db_connection()
+    try:
+        vendors = conn.execute('SELECT * FROM vendors').fetchall()
+        vendors_list = [dict(v) for v in vendors]
+        return jsonify({"vendors": vendors_list})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/vendors/<int:vendor_id>', methods=['GET'])
+def get_vendor_details(vendor_id):
+    """Get details for a specific vendor"""
+    conn = get_db_connection()
+    try:
+        vendor = conn.execute('SELECT * FROM vendors WHERE id = ?', (vendor_id,)).fetchone()
+        if vendor:
+            return jsonify(dict(vendor))
+        else:
+            return jsonify({"error": "Vendor not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "healthy", "documents_loaded": len(system.documents) if system else 0})

@@ -4,6 +4,7 @@ import LandingPage from './pages/LandingPage';
 import BudgetBreakdown from './pages/BudgetBreakdown';
 import ProjectSchedule from './pages/ProjectSchedule';
 import MaterialsVendors from './pages/MaterialsVendors';
+import VendorDetails from './pages/VendorDetails';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 
@@ -42,6 +43,11 @@ function App() {
           <Route path="/materials" element={
             <ProtectedRoute>
               <MaterialsVendors />
+            </ProtectedRoute>
+          } />
+          <Route path="/vendors/:id" element={
+            <ProtectedRoute>
+              <VendorDetails />
             </ProtectedRoute>
           } />
         </Routes>

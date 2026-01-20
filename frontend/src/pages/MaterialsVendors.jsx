@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/layouts/DashboardLayout';
 import { Button } from "@/components/ui/button";
 import { Plus, Search, Filter, AlertTriangle, ArrowRight, Star, Loader2 } from 'lucide-react';
@@ -29,13 +30,30 @@ const MaterialsVendors = () => {
     }
 
     const materials = procurementData.material_requirements || [];
+    const navigate = useNavigate();
 
-    // Flatten vendor recommendations for the grid
-    const vendorRecs = procurementData.vendor_recommendations || {};
-    const allVendors = [];
-    Object.entries(vendorRecs).forEach(([category, vendors]) => {
-        vendors.forEach(v => allVendors.push({ ...v, category }));
-    });
+    const [vendorsList, setVendorsList] = useState([]);
+
+    useEffect(() => {
+        const fetchVendors = async () => {
+            try {
+                const response = await fetch('http://localhost:5001/vendors');
+                const data = await response.json();
+                if (data.vendors) {
+                    setVendorsList(data.vendors);
+                }
+            } catch (error) {
+                console.error("Error fetching vendors:", error);
+            }
+        };
+
+        fetchVendors();
+    }, []);
+
+    // Use vendorsList if available, otherwise fallback (or just use correct logic)
+    // The previous logic derived vendors from recommendations. We will now prioritize the DB vendors.
+    const displayVendors = vendorsList.length > 0 ? vendorsList : [];
+
 
     return (
         <DashboardLayout>
@@ -60,8 +78,12 @@ const MaterialsVendors = () => {
                         </a>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {allVendors.slice(0, 9).map((vendor, idx) => (
-                            <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col group hover:shadow-xl hover:shadow-amber-500/10 transition-all">
+                        {displayVendors.map((vendor, idx) => (
+                            <div
+                                key={idx}
+                                onClick={() => navigate(`/vendors/${vendor.id}`)}
+                                className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col group hover:shadow-xl hover:shadow-amber-500/10 transition-all cursor-pointer"
+                            >
                                 <div className="bg-amber-300 px-4 py-2 flex items-center justify-between border-b border-gray-200">
                                     <span className="text-[10px] font-black uppercase tracking-widest text-warning-black truncate max-w-[150px]">{vendor.category}</span>
                                     <div className="flex items-center gap-1">
@@ -72,11 +94,18 @@ const MaterialsVendors = () => {
                                 <div className="p-5 flex-1">
                                     <div className="flex items-start justify-between mb-4">
                                         <div className="w-14 h-14 bg-gray-50 rounded border border-gray-200 flex items-center justify-center font-bold text-xs text-gray-400">Logo</div>
-                                        <span className="text-[10px] font-black px-2 py-0.5 rounded uppercase bg-green-100 text-green-700">Verified</span>
+                                        <div className="flex gap-2">
+                                            {vendor.verified && <span className="text-[10px] font-black px-2 py-0.5 rounded uppercase bg-green-100 text-green-700">Verified</span>}
+                                        </div>
                                     </div>
-                                    <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate">{vendor.vendor}</h4>
-                                    <p className="text-xs text-amber-700 mb-4 font-medium truncate">{vendor.location} • {vendor.product}</p>
-                                    <Button className="w-full bg-warning-black text-white hover:bg-primary uppercase font-black text-xs tracking-widest">Request Quote</Button>
+                                    <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate">{vendor.name || vendor.vendor}</h4>
+                                    <p className="text-xs text-amber-700 mb-4 font-medium truncate">{vendor.location} • {vendor.category || vendor.product}</p>
+                                    <Button
+                                        onClick={(e) => { e.stopPropagation(); }}
+                                        className="w-full bg-warning-black text-white hover:bg-primary uppercase font-black text-xs tracking-widest"
+                                    >
+                                        Request Quote
+                                    </Button>
                                 </div>
                             </div>
                         ))}

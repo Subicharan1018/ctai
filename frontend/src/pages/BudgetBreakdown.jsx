@@ -187,7 +187,7 @@ const BudgetBreakdown = () => {
             {/* Detailed Spend Table */}
             <div className="bg-white rounded-xl border-2 border-gray-100 overflow-hidden shadow-sm">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/30">
-                    <h3 className="font-black uppercase tracking-widest text-sm">Top Vendors by Spend</h3>
+                    <h3 className="font-black uppercase tracking-widest text-sm">Top Vendors Nearby ({data.project_details?.location || "India"})</h3>
                     <button className="text-primary font-bold text-xs uppercase hover:underline">View All Vendors</button>
                 </div>
                 <div className="overflow-x-auto">
@@ -195,40 +195,71 @@ const BudgetBreakdown = () => {
                         <thead>
                             <tr className="bg-gray-50">
                                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Vendor Entity</th>
-                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Category</th>
-                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Committed</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400">Location</th>
+                                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-right">Rating</th>
                                 <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-gray-400 text-center">Score</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {[
-                                { name: 'IronStream Steel Co.', code: 'IS', cat: 'Structural Steel', spend: '$842,000', score: 92, color: 'bg-warning-black text-caution' },
-                                { name: 'Titan Concrete Ltd', code: 'TC', cat: 'Ready-Mix', spend: '$615,500', score: 78, color: 'bg-gray-200 text-warning-black' },
-                                { name: 'BuildFast Foundations', code: 'BF', cat: 'Substructure', spend: '$290,000', score: 65, color: 'bg-primary text-white' }
-                            ].map((vendor, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 flex items-center justify-center font-black rounded-sm text-xs ${vendor.color}`}>
-                                                {vendor.code}
-                                            </div>
-                                            <span className="font-bold text-sm">{vendor.name}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <span className="px-2 py-1 bg-gray-100 text-gray-600 text-[10px] font-black uppercase rounded">{vendor.cat}</span>
-                                    </td>
-                                    <td className="px-6 py-4 text-right font-black text-sm">{vendor.spend}</td>
-                                    <td className="px-6 py-4">
-                                        <div className="w-24 bg-gray-200 h-1.5 rounded-full overflow-hidden mx-auto">
-                                            <div
-                                                className={`h-full ${vendor.score > 80 ? 'bg-green-500' : vendor.score > 70 ? 'bg-caution' : 'bg-red-500'}`}
-                                                style={{ width: `${vendor.score}%` }}
-                                            ></div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                            {(() => {
+                                // Extract and flatten vendors from recommendations
+                                const allVendors = [];
+                                if (data.vendor_recommendations) {
+                                    Object.entries(data.vendor_recommendations).forEach(([category, vendors]) => {
+                                        vendors.forEach(v => {
+                                            allVendors.push({ ...v, category });
+                                        });
+                                    });
+                                }
+
+                                // Sort by relevance/rating and take top 5
+                                const topVendors = allVendors
+                                    .sort((a, b) => (parseFloat(b.rating) || 0) - (parseFloat(a.rating) || 0))
+                                    .slice(0, 5);
+
+                                if (topVendors.length === 0) {
+                                    return (
+                                        <tr>
+                                            <td colSpan="4" className="px-6 py-8 text-center text-gray-400 text-sm font-medium">
+                                                No specific vendor recommendations found for this location.
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+
+                                return topVendors.map((vendor, idx) => {
+                                    const score = parseFloat(vendor.rating) * 20 || 0; // Convert 5 star to 100
+                                    const color = score > 90 ? 'bg-green-500' : score > 70 ? 'bg-caution' : 'bg-red-500';
+
+                                    return (
+                                        <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 flex items-center justify-center font-black rounded-sm text-xs bg-gray-100 text-gray-600">
+                                                        {vendor.vendor?.substring(0, 2).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-bold text-sm block text-warning-black">{vendor.vendor || vendor.name}</span>
+                                                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[9px] font-black uppercase rounded mt-1 inline-block">{vendor.category}</span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className="text-xs font-bold text-gray-500">{vendor.location}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-black text-sm">{vendor.rating}</td>
+                                            <td className="px-6 py-4">
+                                                <div className="w-24 bg-gray-200 h-1.5 rounded-full overflow-hidden mx-auto">
+                                                    <div
+                                                        className={`h-full ${color}`}
+                                                        style={{ width: `${Math.min(score, 100)}%` }}
+                                                    ></div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                });
+                            })()}
                         </tbody>
                     </table>
                 </div>
