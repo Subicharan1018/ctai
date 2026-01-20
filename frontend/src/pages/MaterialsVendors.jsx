@@ -51,6 +51,38 @@ const MaterialsVendors = () => {
                     </Button>
                 </div>
 
+                {/* Vendors Grid */}
+                <section>
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-[22px] font-black uppercase tracking-tight text-warning-black">Preferred Vendors</h3>
+                        <a href="#" className="text-sm font-black text-primary hover:underline uppercase tracking-widest flex items-center gap-1">
+                            Directory <ArrowRight className="w-4 h-4" />
+                        </a>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {allVendors.slice(0, 9).map((vendor, idx) => (
+                            <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col group hover:shadow-xl hover:shadow-amber-500/10 transition-all">
+                                <div className="bg-amber-300 px-4 py-2 flex items-center justify-between border-b border-gray-200">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-warning-black truncate max-w-[150px]">{vendor.category}</span>
+                                    <div className="flex items-center gap-1">
+                                        <Star className="w-3 h-3 fill-current text-white" />
+                                        <span className="text-[10px] font-black uppercase text-white">{vendor.rating !== 'N/A' ? vendor.rating : '4.5'}</span>
+                                    </div>
+                                </div>
+                                <div className="p-5 flex-1">
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div className="w-14 h-14 bg-gray-50 rounded border border-gray-200 flex items-center justify-center font-bold text-xs text-gray-400">Logo</div>
+                                        <span className="text-[10px] font-black px-2 py-0.5 rounded uppercase bg-green-100 text-green-700">Verified</span>
+                                    </div>
+                                    <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate">{vendor.vendor}</h4>
+                                    <p className="text-xs text-amber-700 mb-4 font-medium truncate">{vendor.location} • {vendor.product}</p>
+                                    <Button className="w-full bg-warning-black text-white hover:bg-primary uppercase font-black text-xs tracking-widest">Request Quote</Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
                 {/* Materials Table Section */}
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                     <div className="bg-amber-300 text-white px-6 py-4 flex items-center justify-between">
@@ -103,38 +135,6 @@ const MaterialsVendors = () => {
                         </table>
                     </div>
                 </div>
-
-                {/* Vendors Grid */}
-                <section>
-                    <div className="flex items-center justify-between mb-6">
-                        <h3 className="text-[22px] font-black uppercase tracking-tight text-warning-black">Preferred Vendors</h3>
-                        <a href="#" className="text-sm font-black text-primary hover:underline uppercase tracking-widest flex items-center gap-1">
-                            Directory <ArrowRight className="w-4 h-4" />
-                        </a>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {allVendors.slice(0, 9).map((vendor, idx) => (
-                            <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col group hover:shadow-xl hover:shadow-amber-500/10 transition-all">
-                                <div className="bg-amber-300 px-4 py-2 flex items-center justify-between border-b border-gray-200">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-warning-black truncate max-w-[150px]">{vendor.category}</span>
-                                    <div className="flex items-center gap-1">
-                                        <Star className="w-3 h-3 fill-current text-white" />
-                                        <span className="text-[10px] font-black uppercase text-white">{vendor.rating !== 'N/A' ? vendor.rating : '4.5'}</span>
-                                    </div>
-                                </div>
-                                <div className="p-5 flex-1">
-                                    <div className="flex items-start justify-between mb-4">
-                                        <div className="w-14 h-14 bg-gray-50 rounded border border-gray-200 flex items-center justify-center font-bold text-xs text-gray-400">Logo</div>
-                                        <span className="text-[10px] font-black px-2 py-0.5 rounded uppercase bg-green-100 text-green-700">Verified</span>
-                                    </div>
-                                    <h4 className="text-lg font-black uppercase tracking-tight mb-1 truncate">{vendor.vendor}</h4>
-                                    <p className="text-xs text-amber-700 mb-4 font-medium truncate">{vendor.location} • {vendor.product}</p>
-                                    <Button className="w-full bg-warning-black text-white hover:bg-primary uppercase font-black text-xs tracking-widest">Request Quote</Button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
             </div>
         </DashboardLayout>
     );

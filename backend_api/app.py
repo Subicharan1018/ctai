@@ -11,12 +11,65 @@ import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
+import sqlite3
+from werkzeug.security import generate_password_hash, check_password_hash
 import time
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["http://localhost:5173", "http://localhost:3000"]}})
+
+DB_NAME = "ctai.db"
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # Users table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            company TEXT,
+            project_type TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Conversations table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+    
+    # Messages table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            sender TEXT NOT NULL,
+            text TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (conversation_id) REFERENCES conversations (id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("Database initialized.")
 
 class ConstructionProcurementSystem:
     def __init__(self, json_dir: str = "json"):
@@ -699,6 +752,107 @@ def search_vendors():
 def health():
     return jsonify({"status": "healthy", "documents_loaded": len(system.documents) if system else 0})
 
+# Authentication Endpoints
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    name = data.get('name')
+    email = data.get('email')
+    password = data.get('password')
+    company = data.get('company')
+    project_type = data.get('project_type')
+    
+    if not email or not password or not name:
+        return jsonify({"error": "Missing required fields"}), 400
+        
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    try:
+        password_hash = generate_password_hash(password)
+        c.execute('INSERT INTO users (name, email, password_hash, company, project_type) VALUES (?, ?, ?, ?, ?)',
+                  (name, email, password_hash, company, project_type))
+        conn.commit()
+        user_id = c.lastrowid
+        return jsonify({"message": "User registered successfully", "user_id": user_id}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Email already exists"}), 409
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+    
+    conn = get_db_connection()
+    user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+    conn.close()
+    
+    if user and check_password_hash(user['password_hash'], password):
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "id": user['id'],
+                "name": user['name'],
+                "email": user['email'],
+                "company": user['company']
+            }
+        }), 200
+    else:
+        return jsonify({"error": "Invalid email or password"}), 401
+
+# Chat History Endpoints
+@app.route('/conversations', methods=['GET', 'POST'])
+def handle_conversations():
+    conn = get_db_connection()
+    
+    if request.method == 'GET':
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({"error": "User ID required"}), 400
+            
+        conversations = conn.execute('SELECT * FROM conversations WHERE user_id = ? ORDER BY created_at DESC', (user_id,)).fetchall()
+        conn.close()
+        return jsonify([dict(c) for c in conversations])
+        
+    elif request.method == 'POST':
+        data = request.json
+        user_id = data.get('user_id')
+        title = data.get('title', 'New Conversation')
+        
+        c = conn.cursor()
+        c.execute('INSERT INTO conversations (user_id, title) VALUES (?, ?)', (user_id, title))
+        conn.commit()
+        conv_id = c.lastrowid
+        conn.close()
+        return jsonify({"id": conv_id, "title": title}), 201
+
+@app.route('/conversations/<int:conversation_id>/messages', methods=['GET', 'POST'])
+def handle_messages(conversation_id):
+    conn = get_db_connection()
+    
+    if request.method == 'GET':
+        messages = conn.execute('SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC', (conversation_id,)).fetchall()
+        conn.close()
+        return jsonify([dict(m) for m in messages])
+        
+    elif request.method == 'POST':
+        data = request.json
+        sender = data.get('sender')
+        text = data.get('text')
+        
+        c = conn.cursor()
+        c.execute('INSERT INTO messages (conversation_id, sender, text) VALUES (?, ?, ?)', (conversation_id, sender, text))
+        conn.commit()
+        msg_id = c.lastrowid
+        conn.close()
+        return jsonify({"id": msg_id, "status": "saved"}), 201
+
 if __name__ == '__main__':
+    init_db()
     init_system()
     app.run(host='0.0.0.0', port=5001, debug=True)
