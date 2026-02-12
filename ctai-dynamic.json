@@ -1,0 +1,374 @@
+{
+  "name": "ctai-dynamic",
+  "nodes": [
+    {
+      "parameters": {
+        "maxItems": 10
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -7968,
+        3264
+      ],
+      "id": "808c0e0d-fa5b-4837-8345-afd38de4cf75",
+      "name": "Limit to 10"
+    },
+    {
+      "parameters": {
+        "url": "=https://dir.indiamart.com/search.mp?ss={{ encodeURIComponent($json.query.product_name || $json.body.product_name || 'construction sand') }}&prdsrc=1&v=4&mcatid=&catid=&crs=city-landing&trc=xim&cq={{ encodeURIComponent($json.query.location || $json.body.location || 'chennai') }}&tags=res:RC3|ktp:N0|stype:attr=1|mtp:S|wc:3|lcf:3|cq:{{ encodeURIComponent(($json.query.location || $json.body.location || 'chennai').toLowerCase()) }}|qr_nm:gl-gd|cs:19912|com-cf:nl|ptrs:na|mc:184663|cat:643|qry_typ:P|lang:en|tyr:1|qrd:260203|mrd:260203|prdt:260203|msf:ls|pfen:1|gli:U0G0I0|gc:{{ encodeURIComponent($json.query.location || $json.body.location || 'chennai') }}|ic:{{ encodeURIComponent($json.query.location || $json.body.location || 'chennai') }}|scw:1|emt:9",
+        "options": {
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 10
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -8448,
+        3264
+      ],
+      "id": "ed7c7a14-c0d8-4c3f-b12c-1d37d51b525e",
+      "name": "HTTP Request1",
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "link",
+              "cssSelector": "a.cardlinks",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            },
+            {
+              "key": "seller-info",
+              "cssSelector": "div.seller-contact-details"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -8272,
+        3264
+      ],
+      "id": "0b5458bd-4413-426f-a430-e83953f15d89",
+      "name": "HTML1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Local NLP Extractor using Regex/Pattern Matching\n// This replaces the Groq LLM AI-based extraction\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const productHtml = item.json.product || '';\n  const sellerHtml = item.json['seller info'] || '';\n  \n  // Clean HTML - remove tags and decode entities\n  function cleanHtml(html) {\n    if (!html) return '';\n    return html\n      .replace(/<[^>]*>/g, ' ')\n      .replace(/&nbsp;/g, ' ')\n      .replace(/&amp;/g, '&')\n      .replace(/&lt;/g, '<')\n      .replace(/&gt;/g, '>')\n      .replace(/&quot;/g, '\"')\n      .replace(/&#39;/g, \"'\")\n      .replace(/\\s+/g, ' ')\n      .trim();\n  }\n  \n  const productText = cleanHtml(productHtml);\n  const sellerText = cleanHtml(sellerHtml);\n  \n  // Product field extraction patterns\n  const productPatterns = {\n    packaging_type: /Packaging\\s*Type\\s*[:\\-]?\\s*([A-Za-z0-9\\s]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    usage_application: /Usage[\\s\\/]*Application\\s*[:\\-]?\\s*([A-Za-z0-9\\s,&]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    brand: /Brand\\s*[:\\-]?\\s*([A-Za-z0-9\\s]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    color: /Colou?r\\s*[:\\-]?\\s*([A-Za-z0-9\\s,]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    material: /Material\\s*[:\\-]?\\s*([A-Za-z0-9\\s,]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    form: /Form\\s*[:\\-]?\\s*([A-Za-z0-9\\s]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    water_absorption: /Water\\s*Absorption\\s*[:\\-]?\\s*([0-9.]+\\s*%?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    country_of_origin: /Country\\s*of\\s*Origin\\s*[:\\-]?\\s*([A-Za-z\\s]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    thickness: /Thickness\\s*[:\\-]?\\s*([0-9.]+\\s*(?:mm|cm|inch|inches)?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    availability: /Availability\\s*[:\\-]?\\s*([A-Za-z\\s]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    grade: /Grade\\s*[:\\-]?\\s*([A-Za-z0-9\\s\\-]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    size: /Size\\s*[:\\-]?\\s*([A-Za-z0-9\\s\\-x×]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    weight: /Weight\\s*[:\\-]?\\s*([0-9.]+\\s*(?:kg|g|ton|tons|Kg|KG)?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    dimensions: /Dimensions?\\s*[:\\-]?\\s*([0-9.]+\\s*[x×]\\s*[0-9.]+(?:\\s*[x×]\\s*[0-9.]+)?\\s*(?:mm|cm|m|inch|ft)?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    compressive_strength: /Compressive\\s*Strength\\s*[:\\-]?\\s*([0-9.]+\\s*(?:MPa|N\\/mm2|psi)?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    density: /(?:Bulk\\s*)?Density\\s*[:\\-]?\\s*([0-9.]+\\s*(?:kg\\/m3|g\\/cm3)?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    finish: /Finish\\s*[:\\-]?\\s*([A-Za-z0-9\\s]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    shape: /Shape\\s*[:\\-]?\\s*([A-Za-z0-9\\s]+?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i,\n    price: /(?:Price|Rs\\.?|INR|₹)\\s*[:\\-]?\\s*([0-9,.]+(?:\\s*\\/\\s*[A-Za-z]+)?)(?=\\s*[A-Z][a-z]*\\s*[:\\-]|$)/i\n  };\n  \n  // Extract product details\n  const productDetails = {\n    material_category: 'Construction Material',\n    product_type: 'General'\n  };\n  \n  for (const [key, pattern] of Object.entries(productPatterns)) {\n    const match = productText.match(pattern);\n    if (match && match[1]) {\n      productDetails[key] = match[1].trim();\n    }\n  }\n  \n  // Determine material category from material or product type\n  const materialKeywords = {\n    'cement': 'Cement',\n    'concrete': 'Concrete',\n    'sand': 'Sand',\n    'brick': 'Bricks',\n    'steel': 'Steel',\n    'tile': 'Tiles',\n    'gravel': 'Gravel',\n    'aggregate': 'Aggregates',\n    'paint': 'Paint',\n    'wood': 'Wood',\n    'glass': 'Glass',\n    'pipe': 'Pipes',\n    'wire': 'Wire'\n  };\n  \n  const textLower = productText.toLowerCase();\n  for (const [keyword, category] of Object.entries(materialKeywords)) {\n    if (textLower.includes(keyword)) {\n      productDetails.material_category = category;\n      break;\n    }\n  }\n  \n  // Extract seller details\n  const sellerDetails = {\n    company_name: 'Unknown'\n  };\n  \n  // Company name - usually in caps or first major text\n  const companyMatch = sellerText.match(/([A-Z][A-Z\\s]+(?:CONCRETE|CEMENT|STEEL|TILES|SAND|CONSTRUCTION|BUILDING|MATERIALS|ENTERPRISES|TRADERS|PVT|LTD|LIMITED|INDUSTRIES|CORPORATION|CORP)?)/i);\n  if (companyMatch) {\n    sellerDetails.company_name = companyMatch[1].trim();\n  }\n  \n  // Contact person\n  const personMatch = sellerText.match(/(?:Contact|Person|Name)[:\\s]*([A-Za-z\\s]+?)(?=\\d|,|$)/i) ||\n                      sellerText.match(/([A-Z][a-z]+\\s+[A-Z][a-z]+)/);\n  if (personMatch) {\n    sellerDetails.contact_person = personMatch[1].trim();\n  }\n  \n  // Address parsing\n  const addressObj = {};\n  \n  // City - common Indian cities\n  const cityMatch = sellerText.match(/(Chennai|Mumbai|Delhi|Bangalore|Bengaluru|Kolkata|Hyderabad|Pune|Ahmedabad|Jaipur|Lucknow|Kanpur|Nagpur|Indore|Thane|Bhopal|Visakhapatnam|Patna|Vadodara|Ghaziabad|Ludhiana|Agra|Nashik|Faridabad|Meerut|Rajkot|Varanasi|Srinagar|Aurangabad|Dhanbad|Amritsar|Allahabad|Ranchi|Howrah|Coimbatore|Jabalpur|Gwalior|Vijayawada|Jodhpur|Madurai|Raipur|Kota|Guwahati|Chandigarh|Solapur|Hubli|Tiruchirappalli|Bareilly|Mysore|Tiruppur|Gurgaon|Noida)/i);\n  if (cityMatch) {\n    addressObj.city = cityMatch[1];\n  }\n  \n  // State\n  const stateMatch = sellerText.match(/(Tamil Nadu|Maharashtra|Karnataka|Gujarat|Rajasthan|Uttar Pradesh|Madhya Pradesh|West Bengal|Bihar|Andhra Pradesh|Telangana|Kerala|Punjab|Haryana|Odisha|Jharkhand|Assam|Chhattisgarh|Uttarakhand|Himachal Pradesh|Goa)/i);\n  if (stateMatch) {\n    addressObj.state = stateMatch[1];\n  }\n  \n  // Pincode\n  const pincodeMatch = sellerText.match(/\\b(\\d{6})\\b/);\n  if (pincodeMatch) {\n    addressObj.pincode = pincodeMatch[1];\n  }\n  \n  // Country\n  if (sellerText.toLowerCase().includes('india')) {\n    addressObj.country = 'India';\n  }\n  \n  // Full address text\n  const fullAddressMatch = sellerText.match(/([\\d\\/]+[A-Za-z,\\s]+(?:Nagar|Street|Road|Lane|Colony|Layout|Extension|Sector|Block|Phase|Area|Park|Garden|Building|Complex|Tower|Floor|Plot|Apartment|Flat)[\\s,]*[A-Za-z\\s,\\-0-9]+)/i);\n  if (fullAddressMatch) {\n    addressObj.full_text = fullAddressMatch[1].trim();\n  }\n  \n  if (Object.keys(addressObj).length > 0) {\n    sellerDetails.address = addressObj;\n  }\n  \n  // Links\n  const linksObj = {};\n  const profileUrlMatch = sellerText.match(/(https?:\\/\\/(?:www\\.)?indiamart\\.com\\/[^\\s\\]]+)/i);\n  if (profileUrlMatch) {\n    linksObj.profile_url = profileUrlMatch[1];\n  }\n  \n  const mapsMatch = sellerText.match(/(https?:\\/\\/(?:www\\.)?google\\.com\\/maps[^\\s\\]]+)/i);\n  if (mapsMatch) {\n    linksObj.google_maps = mapsMatch[1];\n  }\n  \n  if (Object.keys(linksObj).length > 0) {\n    sellerDetails.links = linksObj;\n  }\n  \n  // Create output in expected format\n  const output = {\n    product_details: productDetails,\n    seller_details: sellerDetails\n  };\n  \n  results.push({ json: { output } });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -7040,
+        3264
+      ],
+      "id": "nlp-extractor-code-node",
+      "name": "NLP Extractor"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -7264,
+        3248
+      ],
+      "id": "6602cb62-ef29-4777-a62e-c4309925e90c",
+      "name": "Loop Over Items1"
+    },
+    {
+      "parameters": {
+        "path": "0fbf86c9-bdd9-4b20-8414-14e63ae14b8c",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -8656,
+        3264
+      ],
+      "id": "8fc85b4c-c326-40cf-87ee-3b6fcabfd40d",
+      "name": "Webhook",
+      "webhookId": "0fbf86c9-bdd9-4b20-8414-14e63ae14b8c"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -6576,
+        3232
+      ],
+      "id": "714188fe-5aa7-44b1-815e-d5c44475f2d2",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "link",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -8112,
+        3264
+      ],
+      "id": "485e1a46-7c5f-4744-b84e-ce3d442e93f6",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.link }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "maxRedirects": 10
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -7824,
+        3264
+      ],
+      "id": "50386dfd-5634-4412-938e-d3d2e2bf1a00",
+      "name": "HTTP Request4",
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "product",
+              "cssSelector": "div.tabel-Details"
+            },
+            {
+              "key": "seller info",
+              "cssSelector": "div.seller-contact-details"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -7664,
+        3264
+      ],
+      "id": "6766a098-785d-4670-b86c-9d8fa8fb5e49",
+      "name": "HTML4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1e79f96d-9975-431b-b2da-9aef393f39e3",
+              "leftValue": "={{ $json.product }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "80b21b8d-e926-469f-98f2-c68a3d05fcf3",
+              "leftValue": "={{ $json[\"seller info\"] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -7504,
+        3264
+      ],
+      "id": "c466428f-d20e-4693-9d03-46da2faefb5c",
+      "name": "If"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Limit to 10": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "HTML1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML1": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NLP Extractor": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "NLP Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Limit to 10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request4": {
+      "main": [
+        [
+          {
+            "node": "HTML4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML4": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "351c3fd4-d936-4e0b-af5f-5e4384de0996",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7025708f773a3f06830f08f7a2df2d519b6a4193c4b5b901d00ad780436b141b"
+  },
+  "id": "y_rvORN8s59Wn4qzDNuUV",
+  "tags": []
+}

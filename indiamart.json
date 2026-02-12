@@ -1,0 +1,422 @@
+{
+  "name": "ctai-dynamic",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://dir.indiamart.com/search.mp?ss={{ encodeURIComponent($json.query.product_name || $json.body.product_name || 'construction sand') }}&prdsrc=1&v=4&mcatid=&catid=&crs=city-landing&trc=xim&cq={{ encodeURIComponent($json.query.location || $json.body.location || 'chennai') }}&tags=res:RC3|ktp:N0|stype:attr=1|mtp:S|wc:3|lcf:3|cq:{{ encodeURIComponent(($json.query.location || $json.body.location || 'chennai').toLowerCase()) }}|qr_nm:gl-gd|cs:19912|com-cf:nl|ptrs:na|mc:184663|cat:643|qry_typ:P|lang:en|tyr:1|qrd:260203|mrd:260203|prdt:260203|msf:ls|pfen:1|gli:U0G0I0|gc:{{ encodeURIComponent($json.query.location || $json.body.location || 'chennai') }}|ic:{{ encodeURIComponent($json.query.location || $json.body.location || 'chennai') }}|scw:1|emt:9",
+        "authentication": "none",
+        "sendQuery": false,
+        "sendHeaders": false,
+        "sendBody": false,
+        "options": {
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 10
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -3344,
+        1072
+      ],
+      "id": "3cea04c1-c85d-49fd-b87f-67a4148e8df4",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "link",
+              "cssSelector": "a.cardlinks",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            },
+            {
+              "key": "seller-info",
+              "cssSelector": "div.seller-contact-details"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -3136,
+        1072
+      ],
+      "id": "026ccef6-4fff-4f73-ac84-0332489f8e00",
+      "name": "HTML"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "link",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -2928,
+        1072
+      ],
+      "id": "22baf517-57ab-40b5-a785-b8d0c845e012",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.link }}",
+        "authentication": "none",
+        "sendQuery": false,
+        "sendHeaders": false,
+        "sendBody": false,
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          },
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 10
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -2720,
+        1072
+      ],
+      "id": "6c9c557c-f39a-44c8-a848-bdaf07316b8f",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "product",
+              "cssSelector": "div.tabel-Details"
+            },
+            {
+              "key": "seller info",
+              "cssSelector": "div.seller-contact-details"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        -2512,
+        1072
+      ],
+      "id": "2acd47e3-c6cc-41d5-b2ce-a83cfb36072d",
+      "name": "HTML1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Extract and structure the following construction material product information into JSON format.\n\nProduct HTML: {{ $json.product }}\nSeller HTML: {{ $json[\"seller info\"] }}\n\nIMPORTANT INSTRUCTIONS:\n1. Identify the material type (cement, sand, bricks, steel, tiles, gravel, concrete, paint, etc.)\n2. Extract ALL available specifications, measurements, and properties from the HTML\n3. Include common fields like: product_type, brand, material, color, grade, size, dimensions, weight, packaging_size, application, usage, availability, price (if mentioned)\n4. For technical properties, include any measurements like: compressive_strength, tensile_strength, ph_value, bulk_density, moisture_content, particle_size, thickness, etc.\n5. Parse seller information including: company_name, contact_person, address details (city, state, pincode, country), and any available links\n6. If a field is not available in the HTML, omit it from the output (don't include null values)\n7. Ensure all extracted data is accurate and properly typed (numbers as numbers, strings as strings)\n8. Keep the structure consistent but flexible to accommodate different material types\n\nProvide the response as a clean, well-structured JSON object.",
+        "hasOutputParser": true,
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        -1728,
+        1072
+      ],
+      "id": "22f5bec2-4669-49fc-8c25-778b461a397c",
+      "name": "Basic LLM Chain",
+      "alwaysOutputData": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -1728,
+        1280
+      ],
+      "id": "8c0b3f35-7ff4-4ea5-bb9a-0375b5a8a9aa",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "xp4yA1hHsLEmdgr1",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2208,
+        1056
+      ],
+      "id": "2bfb9531-89cc-4f1b-9654-bd08bd00e2e5",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "11c86036-8c75-4596-8a16-704ea2735608",
+              "name": "output",
+              "value": "={{ $json.output }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1312,
+        1040
+      ],
+      "id": "88cfbecf-4e82-4668-8ef8-b76dd0f29ade",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"product_details\": {\n      \"type\": \"object\",\n      \"description\": \"Information regarding the construction material being sold\",\n      \"properties\": {\n        \"material_category\": {\n          \"type\": \"string\",\n          \"description\": \"Category of construction material (e.g., Cement, Sand, Bricks, Steel, Tiles, Gravel, Concrete, Paint, Wood, Glass)\"\n        },\n        \"product_type\": {\n          \"type\": \"string\",\n          \"description\": \"Specific type or variant of the material\"\n        },\n        \"brand\": {\n          \"type\": \"string\",\n          \"description\": \"Brand name or manufacturer\"\n        },\n        \"material\": {\n          \"type\": \"string\",\n          \"description\": \"Base material composition\"\n        },\n        \"grade\": {\n          \"type\": \"string\",\n          \"description\": \"Quality or grade specification\"\n        },\n        \"color\": {\n          \"type\": \"string\",\n          \"description\": \"Color of the material\"\n        },\n        \"size\": {\n          \"type\": \"string\",\n          \"description\": \"Size specification\"\n        },\n        \"dimensions\": {\n          \"type\": \"string\",\n          \"description\": \"Dimensional measurements (length x width x height)\"\n        },\n        \"thickness\": {\n          \"type\": \"string\",\n          \"description\": \"Thickness measurement\"\n        },\n        \"weight\": {\n          \"type\": \"string\",\n          \"description\": \"Weight per unit\"\n        },\n        \"packaging_size\": {\n          \"type\": \"string\",\n          \"description\": \"Package size or quantity\"\n        },\n        \"application\": {\n          \"type\": \"string\",\n          \"description\": \"Primary application area\"\n        },\n        \"usage\": {\n          \"type\": \"string\",\n          \"description\": \"Specific usage or purpose\"\n        },\n        \"compressive_strength\": {\n          \"type\": \"string\",\n          \"description\": \"Compressive strength rating\"\n        },\n        \"tensile_strength\": {\n          \"type\": \"string\",\n          \"description\": \"Tensile strength rating\"\n        },\n        \"ph_value\": {\n          \"type\": \"string\",\n          \"description\": \"pH value measurement\"\n        },\n        \"bulk_density\": {\n          \"type\": \"string\",\n          \"description\": \"Bulk density measurement\"\n        },\n        \"moisture_content\": {\n          \"type\": \"string\",\n          \"description\": \"Moisture content percentage\"\n        },\n        \"particle_size\": {\n          \"type\": \"string\",\n          \"description\": \"Particle or grain size\"\n        },\n        \"finish\": {\n          \"type\": \"string\",\n          \"description\": \"Surface finish type\"\n        },\n        \"coating\": {\n          \"type\": \"string\",\n          \"description\": \"Coating or treatment applied\"\n        },\n        \"standard\": {\n          \"type\": \"string\",\n          \"description\": \"Industry standard compliance (IS, ASTM, etc.)\"\n        },\n        \"price\": {\n          \"type\": \"string\",\n          \"description\": \"Price information if available\"\n        },\n        \"price_unit\": {\n          \"type\": \"string\",\n          \"description\": \"Unit for pricing (per kg, per bag, per piece, etc.)\"\n        },\n        \"availability\": {\n          \"type\": \"string\",\n          \"description\": \"Stock availability status\"\n        },\n        \"product_url\": {\n          \"type\": \"string\",\n          \"description\": \"Link to the product page\"\n        },\n        \"description\": {\n          \"type\": \"string\",\n          \"description\": \"Additional product description\"\n        },\n        \"additional_specifications\": {\n          \"type\": \"object\",\n          \"description\": \"Any other specifications not covered above\",\n          \"additionalProperties\": true\n        }\n      },\n      \"required\": [\"material_category\", \"product_type\"],\n      \"additionalProperties\": false\n    },\n    \"seller_details\": {\n      \"type\": \"object\",\n      \"description\": \"Vendor contact information\",\n      \"properties\": {\n        \"company_name\": {\n          \"type\": \"string\",\n          \"description\": \"Business name\"\n        },\n        \"contact_person\": {\n          \"type\": \"string\",\n          \"description\": \"Representative name\"\n        },\n        \"phone\": {\n          \"type\": \"string\",\n          \"description\": \"Contact phone number\"\n        },\n        \"email\": {\n          \"type\": \"string\",\n          \"description\": \"Contact email\"\n        },\n        \"address\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"full_text\": {\n              \"type\": \"string\",\n              \"description\": \"Complete address string\"\n            },\n            \"street\": {\n              \"type\": \"string\",\n              \"description\": \"Street address\"\n            },\n            \"city\": {\n              \"type\": \"string\",\n              \"description\": \"City name\"\n            },\n            \"state\": {\n              \"type\": \"string\",\n              \"description\": \"State or province\"\n            },\n            \"pincode\": {\n              \"type\": \"string\",\n              \"description\": \"Postal/ZIP code\"\n            },\n            \"country\": {\n              \"type\": \"string\",\n              \"description\": \"Country name\"\n            }\n          },\n          \"additionalProperties\": false\n        },\n        \"links\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"profile_url\": {\n              \"type\": \"string\",\n              \"description\": \"Seller profile URL\"\n            },\n            \"google_maps\": {\n              \"type\": \"string\",\n              \"description\": \"Google Maps location link\"\n            },\n            \"website\": {\n              \"type\": \"string\",\n              \"description\": \"Company website\"\n            }\n          },\n          \"additionalProperties\": false\n        },\n        \"gst_number\": {\n          \"type\": \"string\",\n          \"description\": \"GST registration number\"\n        },\n        \"year_established\": {\n          \"type\": \"string\",\n          \"description\": \"Year company was established\"\n        }\n      },\n      \"required\": [\"company_name\"],\n      \"additionalProperties\": false\n    }\n  },\n  \"required\": [\"product_details\", \"seller_details\"],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -1584,
+        1280
+      ],
+      "id": "72801eb0-f1f6-4372-86b3-0261608ff6ca",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1984,
+        1072
+      ],
+      "id": "b80d8d19-b627-4c6d-98cf-7396de14b655",
+      "name": "Wait",
+      "webhookId": "50add1bb-202e-4464-9745-8d17d454e944"
+    },
+    {
+      "parameters": {
+        "path": "0fbf86c9-bdd9-4b20-8414-14e63ae14b8c",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -3552,
+        1072
+      ],
+      "id": "38ec687a-9a0c-4ab5-bf92-704841151580",
+      "name": "Webhook1",
+      "webhookId": "0fbf86c9-bdd9-4b20-8414-14e63ae14b8c"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1104,
+        1040
+      ],
+      "id": "96f0de1c-f76e-42fb-9284-3427b1d94a93",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "HTML1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML1": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "077a0997-56db-4a9c-8a85-5090f3770b2a",
+  "meta": {
+    "instanceId": "7025708f773a3f06830f08f7a2df2d519b6a4193c4b5b901d00ad780436b141b"
+  },
+  "id": "y_rvORN8s59Wn4qzDNuUV",
+  "tags": []
+}

@@ -4,9 +4,6 @@ import re
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 import pandas as pd
-from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -14,6 +11,7 @@ from dotenv import load_dotenv
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 import time
+from n8n_vendor_service import search_vendors_n8n, get_all_vendors_n8n, search_vendors_db, USE_DB_FALLBACK
 
 load_dotenv()
 
@@ -72,12 +70,7 @@ def init_db():
     print("Database initialized.")
 
 class ConstructionProcurementSystem:
-    def __init__(self, json_dir: str = "json"):
-        self.json_dir = json_dir
-        self.embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-        self.index = None
-        self.documents = []
-        self.metadata = []
+    def __init__(self):
         self.groq_api_key = os.getenv("GROQ_API_KEY")
         
         # Material estimation factors (per sqft for typical construction in India) - FALLBACK
@@ -95,122 +88,46 @@ class ConstructionProcurementSystem:
             "windows": {"unit": "Units", "per_sqft": 0.01, "unit_cost": 12000},   # INR 12k/window
         }
         
-        # Map JSON files to material categories for RAG
+        # Available material categories for AI analysis
         self.material_categories = {
-            "cement": ["cement.json", "cement_links.json"],
-            "concrete": ["concrete_links.json"],
-            "aggregate": ["aggregate_links.json"],
-            "sand": ["sand_links.json"],
-            "tiles": ["tiles_links.json"],
-            "aac_blocks": ["aac_blocks_links.json"],
-            "windows": ["windows_links.json"],
-            "doors": ["fire_rated_doors_links.json"],
-            "false_ceiling": ["false_ceiling_links.json"],
-            "raised_flooring": ["raised_flooring_links.json"],
-            "insulation": ["insulation_links.json"],
-            "ducting": ["ducting_links.json"],
-            "chillers": ["chillers_links.json"],
-            "cooling_tower": ["cooling_tower_links.json"],
-            "pumps": ["pumps_links.json", "waterpump_links.json", "chilled_waterpump_links.json", "fire_pump_links.json"],
-            "cables": ["cable_links.json"],
-            "lv_panel": ["LV_panel_links.json"],
-            "ht_switchgear": ["ht_switch_gear_links.json"],
-            "transformer": ["power_transformer_links.json"],
-            "diesel_generator": ["diesel_generator_links.json"],
-            "ups_battery": ["ups_batter_links.json"],
-            "earthing": ["earthing_links.json"],
-            "busduct": ["busduct_cabletrays_links.json"],
-            "structured_cabling": ["Structured_Cabling_links.json"],
-            "server_racks": ["server_racks_links.json"],
-            "cctv": ["cctv_links.json"],
-            "fire_detection": ["fire_detection_links.json"],
-            "sprinkler": ["sprinkler_links.json"],
-            "hydrant": ["hydrant_links.json"],
-            "clean_agent": ["clean_agent_links.json"],
-            "water_storage": ["water_storage_links.json"],
-            "water_supply_piping": ["water_supply_piping_links.json"],
-            "drainage_piping": ["drainage_piping_links.json"],
-            "sanitary_fixtures": ["sanitary_fixtures_links.json"],
-            "valves_fittings": ["valves_fittings_links.json"],
-            "grout": ["grout_links.json"],
-            "acoustic_partition": ["acoustic_partition_links.json"]
+            "cement": [],
+            "concrete": [],
+            "aggregate": [],
+            "sand": [],
+            "tiles": [],
+            "aac_blocks": [],
+            "windows": [],
+            "doors": [],
+            "false_ceiling": [],
+            "raised_flooring": [],
+            "insulation": [],
+            "ducting": [],
+            "chillers": [],
+            "cooling_tower": [],
+            "pumps": [],
+            "cables": [],
+            "lv_panel": [],
+            "ht_switchgear": [],
+            "transformer": [],
+            "diesel_generator": [],
+            "ups_battery": [],
+            "earthing": [],
+            "busduct": [],
+            "structured_cabling": [],
+            "server_racks": [],
+            "cctv": [],
+            "fire_detection": [],
+            "sprinkler": [],
+            "hydrant": [],
+            "clean_agent": [],
+            "water_storage": [],
+            "water_supply_piping": [],
+            "drainage_piping": [],
+            "sanitary_fixtures": [],
+            "valves_fittings": [],
+            "grout": [],
+            "acoustic_partition": []
         }
-
-    def load_json_files(self):
-        """Load all JSON files from directory"""
-        print("Loading JSON files...")
-        json_files = [f for f in os.listdir(self.json_dir) if f.endswith('.json')]
-        
-        for json_file in json_files:
-            file_path = os.path.join(self.json_dir, json_file)
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    
-                    if isinstance(data, list):
-                        for item in data:
-                            self._process_item(item, json_file)
-                    else:
-                        self._process_item(data, json_file)
-                        
-            except Exception as e:
-                print(f"Error loading {json_file}: {str(e)}")
-                
-        print(f"Loaded {len(self.documents)} products from vendors")
-    
-    def _process_item(self, item: Dict[str, Any], source_file: str):
-        """Process each product item for searchability"""
-        text_parts = []
-        
-        title = item.get('title', '')
-        if title:
-            text_parts.append(f"Product: {title}")
-        
-        details = item.get('details', {})
-        if details and isinstance(details, dict):
-            for key, value in details.items():
-                if value:
-                    text_parts.append(f"{key}: {value}")
-        
-        description = item.get('description', '')
-        if description:
-            text_parts.append(f"Description: {description[:200]}")
-        
-        seller_info = item.get('seller_info', {})
-        company_info = item.get('company_info', {})
-        
-        # Extract location
-        address = seller_info.get('full_address', '')
-        if address:
-            text_parts.append(f"Location: {address}")
-        
-        text = " ".join(text_parts)
-        
-        if text.strip():
-            self.documents.append(text)
-            self.metadata.append({
-                'url': item.get('url', ''),
-                'title': title,
-                'details': details,
-                'seller_info': seller_info,
-                'company_info': company_info,
-                'reviews': item.get('reviews', []),
-                'source_file': source_file,
-                'location': address
-            })
-    
-    def build_index(self):
-        """Build FAISS index for semantic search"""
-        if not self.documents:
-            print("No documents to index!")
-            return
-            
-        print("Building search index...")
-        embeddings = self.embedding_model.encode(self.documents, show_progress_bar=True)
-        dimension = embeddings.shape[1]
-        self.index = faiss.IndexFlatL2(dimension)
-        self.index.add(np.array(embeddings).astype('float32'))
-        print("Index built successfully")
     
     def call_groq_api(self, prompt: str, system_prompt: str = "") -> str:
         """Call Groq API for AI analysis"""
@@ -353,57 +270,7 @@ Return ONLY the JSON object, no other text."""
                 ]
             }
     
-    def search_vendors(self, material_query: str, location: str = "", k: int = 5) -> List[Dict]:
-        """Search for vendors based on material and location"""
-        if self.index is None:
-            return []
-        
-        # Construct search query - prioritize Indian cities if no location
-        if not location:
-            location = "Mumbai OR Delhi OR Bangalore OR Chennai OR Hyderabad"
-        
-        search_query = f"{material_query} {location}"
-        
-        k = min(k, len(self.documents))
-        query_embedding = self.embedding_model.encode([search_query])
-        distances, indices = self.index.search(np.array(query_embedding).astype('float32'), k * 3)
-        
-        results = []
-        seen_companies = set()
-        
-        for i, idx in enumerate(indices[0]):
-            if len(results) >= k:
-                break
-                
-            if idx < len(self.metadata):
-                meta = self.metadata[idx]
-                
-                # Get company name to avoid duplicates
-                company = meta.get('seller_info', {}).get('contact_person', '') or meta.get('seller_info', {}).get('seller_name', '')
-                if company in seen_companies:
-                    continue
-                seen_companies.add(company)
-                
-                # Extract rating
-                rating = "N/A"
-                reviews = meta.get('reviews', [])
-                for review in reviews:
-                    if review.get('type') == 'overall_rating':
-                        rating = review.get('value', 'N/A')
-                        break
-                
-                results.append({
-                    'product': meta.get('title', 'N/A'),
-                    'vendor': company or meta.get('seller_info', {}).get('seller_name', 'N/A'),
-                    'location': meta.get('location', 'N/A') or meta.get('seller_info', {}).get('location', 'N/A'),
-                    'gst': meta.get('company_info', {}).get('gst', 'N/A'),
-                    'rating': rating,
-                    'url': meta.get('url', ''),
-                    'availability': meta.get('details', {}).get('availability', 'N/A'),
-                    'relevance_score': round(float(distances[0][i]), 2)
-                })
-        
-        return results
+
     
     def estimate_materials_fallback(self, built_area_sqft: float, project_type: str = "residential") -> List[Dict]:
         """Fallback: Estimate material requirements based on built area using hardcoded formulas"""
@@ -577,12 +444,17 @@ Return ONLY the JSON object, no other text."""
         )
         
         location_match = re.search(
-            r'(?:build\s*)?in\s+([a-zA-Z][a-zA-Z\s]+?)(?:\s+area|\s*$|,)',
+            r'(?:build\s*)?in\s+([a-zA-Z][a-zA-Z\s]+?)(?:\s+area|\s+for\s|\s*$|,)',
             query, re.IGNORECASE
         )
         
         type_match = re.search(r'(residential|commercial|industrial|data\s*center)', query, re.IGNORECASE)
         power_match = re.search(r'(\d+(?:\.\d+)?)\s*(megawatt|mw|mega\s*watt)', query, re.IGNORECASE)
+        
+        print(f"[DEBUG] Query parsing: '{query}'")
+        print(f"[DEBUG]   Location: '{location_match.group(1).strip() if location_match else 'NOT FOUND'}'")
+        print(f"[DEBUG]   Power: {power_match.group(1) if power_match else 'N/A'} MW")
+        print(f"[DEBUG]   Type: {type_match.group(1) if type_match else 'auto-detect'}")
         
         # Parse built area
         built_area = 50000  # Default
@@ -635,8 +507,11 @@ Return ONLY the JSON object, no other text."""
             search_query = material_info.get("search_query", category)
             priority = material_info.get("priority", "medium")
             
-            # Search for vendors using RAG
-            vendors = self.search_vendors(search_query, location, k=3)
+            # Search for vendors using n8n webhook API
+            vendors = search_vendors_n8n(search_query, location, k=3)
+            if not vendors:
+                # Fallback to DB if n8n returns nothing
+                vendors = search_vendors_db(search_query, location, k=3)
             
             status, stock, lead, sku = get_inventory_status()
             
@@ -678,7 +553,9 @@ Return ONLY the JSON object, no other text."""
                 materials.append(material)
                 
                 # Search vendors for fallback
-                vendors = self.search_vendors(material['material'], location, k=3)
+                vendors = search_vendors_n8n(material['material'], location, k=3)
+                if not vendors:
+                    vendors = search_vendors_db(material['material'], location, k=3)
                 vendor_mapping[material['material']] = vendors
         
         # Calculate budget using fallback formulas (scaled to project volume if specified)
@@ -704,10 +581,8 @@ def init_system():
     global system
     if system is None:
         try:
-            system = ConstructionProcurementSystem(json_dir="json")
-            system.load_json_files()
-            system.build_index()
-            print("Procurement System Initialized")
+            system = ConstructionProcurementSystem()
+            print("Procurement System Initialized (n8n + DB vendors)")
         except Exception as e:
             print(f"System init error: {e}")
 
@@ -731,10 +606,7 @@ def procurement():
 
 @app.route('/search_vendors', methods=['POST'])
 def search_vendors():
-    """Search vendors for specific material"""
-    if not system:
-        init_system()
-    
+    """Search vendors for specific material via n8n webhook API"""
     data = request.json
     material = data.get('material', '')
     location = data.get('location', '')
@@ -743,42 +615,66 @@ def search_vendors():
         return jsonify({"error": "Material not specified"}), 400
     
     try:
-        vendors = system.search_vendors(material, location, k=10)
+        # Primary: use n8n webhook API
+        vendors = search_vendors_n8n(material, location, k=10)
+        
+        # Fallback to DB if n8n returns nothing and fallback is enabled
+        if not vendors and USE_DB_FALLBACK:
+            vendors = search_vendors_db(material, location, k=10)
+        
         return jsonify({"vendors": vendors})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/vendors', methods=['GET'])
 def get_vendors():
-    """Get all vendors from the database"""
-    conn = get_db_connection()
+    """Get all vendors from n8n webhook API"""
+    query = request.args.get('query', 'construction materials')
     try:
-        vendors = conn.execute('SELECT * FROM vendors').fetchall()
-        vendors_list = [dict(v) for v in vendors]
+        # Primary: fetch vendors from n8n
+        vendors_list = get_all_vendors_n8n(query)
+        
+        # Fallback to DB if n8n returns nothing and fallback is enabled
+        if not vendors_list and USE_DB_FALLBACK:
+            conn = get_db_connection()
+            try:
+                vendors = conn.execute('SELECT * FROM vendors').fetchall()
+                vendors_list = [dict(v) for v in vendors]
+            finally:
+                conn.close()
+        
         return jsonify({"vendors": vendors_list})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
 
 @app.route('/vendors/<int:vendor_id>', methods=['GET'])
 def get_vendor_details(vendor_id):
     """Get details for a specific vendor"""
-    conn = get_db_connection()
+    # Fetch all vendors from n8n and find by id
     try:
-        vendor = conn.execute('SELECT * FROM vendors WHERE id = ?', (vendor_id,)).fetchone()
+        vendors = get_all_vendors_n8n()
+        vendor = next((v for v in vendors if v.get('id') == vendor_id), None)
+        
         if vendor:
-            return jsonify(dict(vendor))
-        else:
-            return jsonify({"error": "Vendor not found"}), 404
+            return jsonify(vendor)
+        
+        # Fallback to DB if not found in n8n and fallback is enabled
+        if USE_DB_FALLBACK:
+            conn = get_db_connection()
+            try:
+                vendor = conn.execute('SELECT * FROM vendors WHERE id = ?', (vendor_id,)).fetchone()
+                if vendor:
+                    return jsonify(dict(vendor))
+            finally:
+                conn.close()
+        
+        return jsonify({"error": "Vendor not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    finally:
-        conn.close()
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "healthy", "documents_loaded": len(system.documents) if system else 0})
+    return jsonify({"status": "healthy", "mode": "n8n + DB fallback"})
 
 # Authentication Endpoints
 @app.route('/register', methods=['POST'])
